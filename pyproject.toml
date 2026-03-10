@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.24.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "e-cli"
+version = "0.1.0"
+description = "Terminal-native LLM agent with local and LAN model support"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "E-CLI" }]
+dependencies = [
+  "typer>=0.12.3",
+  "requests>=2.32.3",
+  "pydantic>=2.8.2",
+  "rich>=13.7.1"
+]
+
+[project.scripts]
+e-cli = "e_cli.cli:app"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.2",
+  "pytest-cov>=5.0.0",
+  "mypy>=1.11.1",
+  "ruff>=0.6.3",
+  "types-requests>=2.32.0"
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+mypy_path = "src"
+
+[tool.coverage.run]
+source = ["src/e_cli"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
