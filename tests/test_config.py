@@ -37,6 +37,8 @@ def test_save_and_reload_config(monkeypatch, tmp_path: Path) -> None:
         endpoint="http://1.2.3.4:8000",
         temperature=0.6,
         providerOptions={"seed": 9},
+        ragCorpusDefault="workspace",
+        ragTopK=4,
     )
     save_config(inputConfig)
 
@@ -45,3 +47,5 @@ def test_save_and_reload_config(monkeypatch, tmp_path: Path) -> None:
     assert loadedJson["model"] == "m1"
     assert loadedJson["temperature"] == 0.6
     assert loadedJson["providerOptions"] == {"seed": 9}
+    assert loadedJson["ragCorpusDefault"] == "workspace"
+    assert loadedJson["ragTopK"] == 4

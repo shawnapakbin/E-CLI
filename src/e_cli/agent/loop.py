@@ -13,25 +13,25 @@ from e_cli.models.base import ModelClient, ModelMessage, ModelResponse
 from e_cli.safety.approval import requestApprovalWithMode
 from e_cli.safety.policy import SafetyPolicy
 from e_cli.tools.router import ToolRouter
-from e_cli.ui.messages import printInfo, printQuickTip, printStream, printStreamBreak
+from e_cli.ui.messages import printInfo, printQuickTip
 
 
-SYSTEM_PROMPT = """You are E-CLI, a terminal-native assistant.
+SYSTEM_PROMPT = """You are E-CLI, a terminal-native assistant with access to tools.
 
-For tool actions:
-- Return exactly one JSON object with one of these schemas:
-  - {"tool":"shell","command":"...","reason":"..."}
-  - {"tool":"file.read","path":"...","reason":"..."}
-  - {"tool":"file.write","path":"...","content":"...","reason":"..."}
-  - {"tool":"git.diff","path":"optional/path","reason":"..."}
-  - {"tool":"http.get","url":"https://...","reason":"..."}
-  - {"tool":"done","reason":"..."}
+To use a tool, respond with ONLY a JSON object (no code fences):
+{"tool":"shell","command":"...","reason":"..."}
+{"tool":"file.read","path":"...","reason":"..."}
+{"tool":"file.write","path":"...","content":"...","reason":"..."}
+{"tool":"git.diff","path":"optional","reason":"..."}
+{"tool":"http.get","url":"https://...","reason":"..."}
+{"tool":"browser","url":"https://...","reason":"..."}
+{"tool":"ssh","host":"...","command":"...","reason":"..."}
+{"tool":"curl","url":"https://...","method":"GET","reason":"..."}
+{"tool":"rag.search","query":"...","corpus":"session|workspace|combined","topK":5,"reason":"..."}
+{"tool":"done","reason":"..."}
 
-For normal assistant replies (no tool needed):
-- Return plain text only.
-- Do NOT return JSON.
-- Do NOT wrap text in braces.
-- Do NOT use code fences.
+When you receive a [Tool result: ...] message, use it to answer the user and avoid repeating the same tool call.
+For normal replies, return plain text only.
 """
 
 
@@ -50,6 +50,9 @@ class AgentLoop:
     streamingEnabled: bool
     conversationTokenBudget: int
     conversationSummaryBudget: int
+    memoryDbPath: str | None = None
+    ragCorpusDefault: str = "combined"
+    ragTopK: int = 5
     lastAssistantResponseStreamed: bool = False
 
     def _requestModelResponse(self, conversationHistory: list[ModelMessage]) -> ModelResponse:
@@ -72,10 +75,8 @@ class AgentLoop:
                 )
             )
             if chunks:
-                for chunk in chunks:
-                    printStream(chunk)
-                printStreamBreak()
-                return ModelResponse(content="".join(chunks), streamed=True)
+                # Buffer streamed chunks and parse before printing so tool calls can be labeled.
+                return ModelResponse(content="".join(chunks), streamed=False)
         except Exception as exc:
             printInfo(f"Streaming unavailable, falling back to buffered response: {exc}")
 
@@ -117,7 +118,12 @@ class AgentLoop:
         self.lastAssistantResponseStreamed = False
 
         try:
-            toolRouter = ToolRouter(workspaceRoot=self.workspaceRoot)
+            toolRouter = ToolRouter(
+                workspaceRoot=self.workspaceRoot,
+                memoryDbPath=Path(self.memoryDbPath).expanduser() if self.memoryDbPath else None,
+                ragCorpusDefault=self.ragCorpusDefault,
+                ragTopK=self.ragTopK,
+            )
             conversationHistory = self.memoryService.loadConversation(
                 sessionId=sessionId,
                 maxTokens=self.conversationTokenBudget,
@@ -149,6 +155,8 @@ class AgentLoop:
                     conversationHistory.append(ModelMessage(role="assistant", content=finalAnswer))
                     self.memoryService.appendMessage(sessionId=sessionId, role="assistant", content=finalAnswer)
                     break
+
+                printInfo(f"AI Thinking: {modelResponse.content.strip()}")
 
                 safetyDecision = self.safetyPolicy.evaluate(parsedOutput.toolCall)
                 toolLabel = parsedOutput.toolCall.tool
@@ -198,10 +206,12 @@ class AgentLoop:
                             details=toolOutput,
                         )
 
-                conversationHistory.append(ModelMessage(role="assistant", content=modelResponse.content))
-                conversationHistory.append(ModelMessage(role="tool", content=toolOutput))
-                self.memoryService.appendMessage(sessionId=sessionId, role="assistant", content=modelResponse.content)
-                self.memoryService.appendMessage(sessionId=sessionId, role="tool", content=toolOutput)
+                toolCallJson = parsedOutput.toolCall.model_dump_json(exclude_none=True)
+                toolResultMsg = f"[Tool result: {toolLabel}]\n{toolOutput}"
+                conversationHistory.append(ModelMessage(role="assistant", content=toolCallJson))
+                conversationHistory.append(ModelMessage(role="user", content=toolResultMsg))
+                self.memoryService.appendMessage(sessionId=sessionId, role="assistant", content=toolCallJson)
+                self.memoryService.appendMessage(sessionId=sessionId, role="user", content=toolResultMsg)
 
                 printQuickTip("Use 'e-cli safe-mode status' to inspect execution policy.")
 

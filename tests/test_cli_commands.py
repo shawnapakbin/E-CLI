@@ -1,6 +1,7 @@
 """Tests for CLI command handlers without invoking terminal subprocesses."""
 
 from pathlib import Path
+import sys
 
 from e_cli.cli import (
     approvalSet,
@@ -19,6 +20,7 @@ from e_cli.cli import (
     showSessionAudit,
     testModel,
     listTools,
+    _readChatInput,
     runTool,
     rootCallback,
     showConfig,
@@ -40,6 +42,16 @@ def test_models_list_no_discovery(monkeypatch) -> None:
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
     listModels()
+
+
+def test_read_chat_input_falls_back_to_builtin_input(monkeypatch) -> None:
+    """Ensures chat input helper remains test-friendly when terminal TTY is unavailable."""
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: False)
+    monkeypatch.setattr("builtins.input", lambda _prompt: "hello")
+
+    assert _readChatInput("~~> ") == "hello"
 
 
 def test_models_use_persists_selection(monkeypatch) -> None:
@@ -597,6 +609,10 @@ def test_tools_list_command(monkeypatch) -> None:
     assert any(line.startswith("file.read:") for line in captured)
     assert any(line.startswith("git.diff:") for line in captured)
     assert any(line.startswith("http.get:") for line in captured)
+    assert any(line.startswith("browser:") for line in captured)
+    assert any(line.startswith("ssh:") for line in captured)
+    assert any(line.startswith("curl:") for line in captured)
+    assert any(line.startswith("rag.search:") for line in captured)
 
 
 def test_tools_run_shell_success(monkeypatch, tmp_path: Path) -> None:
@@ -643,6 +659,109 @@ def test_tools_run_http_get_success(monkeypatch) -> None:
     runTool(tool="http.get", url="https://example.com")
 
 
+def test_tools_run_browser_success(monkeypatch) -> None:
+    """Ensures tools run supports the browser tool."""
+
+    cfg = AppConfig(timeoutSeconds=5, approvalMode="auto-approve")
+
+    class FakeRouter:
+        def __init__(self, workspaceRoot):
+            _ = workspaceRoot
+
+        def execute(self, toolCall, timeoutSeconds: int) -> ToolResult:
+            _ = timeoutSeconds
+            assert toolCall.tool == "browser"
+            assert toolCall.url == "https://example.com"
+            return ToolResult(ok=True, output="opened")
+
+    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
+    monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
+    monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
+
+    runTool(tool="browser", url="https://example.com")
+
+
+def test_tools_run_ssh_success(monkeypatch) -> None:
+    """Ensures tools run supports SSH tool with host and command fields."""
+
+    cfg = AppConfig(timeoutSeconds=5, approvalMode="auto-approve")
+
+    class FakeRouter:
+        def __init__(self, workspaceRoot):
+            _ = workspaceRoot
+
+        def execute(self, toolCall, timeoutSeconds: int) -> ToolResult:
+            _ = timeoutSeconds
+            assert toolCall.tool == "ssh"
+            assert toolCall.host == "server.local"
+            assert toolCall.command == "uname -a"
+            return ToolResult(ok=True, output="exitCode=0")
+
+    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
+    monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
+    monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
+
+    runTool(tool="ssh", host="server.local", command="uname -a")
+
+
+def test_tools_run_curl_success(monkeypatch) -> None:
+    """Ensures tools run supports curl with method and headers."""
+
+    cfg = AppConfig(timeoutSeconds=5, approvalMode="auto-approve")
+
+    class FakeRouter:
+        def __init__(self, workspaceRoot):
+            _ = workspaceRoot
+
+        def execute(self, toolCall, timeoutSeconds: int) -> ToolResult:
+            _ = timeoutSeconds
+            assert toolCall.tool == "curl"
+            assert toolCall.url == "https://example.com/api"
+            assert toolCall.method == "POST"
+            assert toolCall.headers == {"Authorization": "Bearer token"}
+            return ToolResult(ok=True, output="status=201")
+
+    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
+    monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
+    monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
+
+    runTool(
+        tool="curl",
+        url="https://example.com/api",
+        method="POST",
+        header=["Authorization=Bearer token"],
+        content='{"ok":true}',
+    )
+
+
+def test_tools_run_rag_search_success(monkeypatch) -> None:
+    """Ensures tools run supports rag.search query and corpus arguments."""
+
+    cfg = AppConfig(timeoutSeconds=5, approvalMode="auto-approve")
+
+    class FakeRouter:
+        def __init__(self, workspaceRoot, memoryDbPath=None, ragCorpusDefault="combined", ragTopK=5):
+            _ = (workspaceRoot, memoryDbPath, ragCorpusDefault, ragTopK)
+
+        def execute(self, toolCall, timeoutSeconds: int) -> ToolResult:
+            _ = timeoutSeconds
+            assert toolCall.tool == "rag.search"
+            assert toolCall.query == "router execute"
+            assert toolCall.corpus == "workspace"
+            assert toolCall.topK == 3
+            return ToolResult(ok=True, output="rag.search\nmatches=1")
+
+    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
+    monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
+    monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
+
+    runTool(tool="rag.search", query="router execute", corpus="workspace", topK=3)
+
+
 def test_tools_run_rejects_unknown_tool(monkeypatch) -> None:
     """Ensures tools run rejects unsupported tool names."""
 
@@ -669,6 +788,8 @@ def test_config_show_command(monkeypatch) -> None:
     assert any(line.startswith("model=") for line in captured)
     assert any(line.startswith("streamingEnabled=") for line in captured)
     assert any(line.startswith("temperature=") for line in captured)
+    assert any(line.startswith("ragCorpusDefault=") for line in captured)
+    assert any(line.startswith("ragTopK=") for line in captured)
     assert any(line.startswith("providerOptions=") for line in captured)
 
 
@@ -692,6 +813,8 @@ def test_config_set_updates_selected_fields(monkeypatch) -> None:
         temperature=0.7,
         topP=0.85,
         maxOutputTokens=512,
+        ragCorpusDefault="workspace",
+        ragTopK=3,
         providerOption=["seed=42", "use_beam_search=true"],
     )
     assert saved["provider"] == "vllm"
@@ -704,6 +827,8 @@ def test_config_set_updates_selected_fields(monkeypatch) -> None:
     assert saved["temperature"] == 0.7
     assert saved["topP"] == 0.85
     assert saved["maxOutputTokens"] == 512
+    assert saved["ragCorpusDefault"] == "workspace"
+    assert saved["ragTopK"] == 3
     assert saved["providerOptions"] == {"seed": 42, "use_beam_search": True}
 
 

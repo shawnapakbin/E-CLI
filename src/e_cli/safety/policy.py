@@ -50,6 +50,35 @@ class SafetyPolicy:
             if toolCall.tool == "http.get":
                 return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only http action")
 
+            if toolCall.tool == "browser":
+                return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only browser action")
+
+            if toolCall.tool == "rag.search":
+                if not (toolCall.query or "").strip():
+                    return SafetyDecision(allowed=False, requiresApproval=False, reason="missing rag query")
+                return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only rag action")
+
+            if toolCall.tool == "curl":
+                method = (toolCall.method or "GET").strip().upper()
+                if method in {"GET", "HEAD", "OPTIONS"}:
+                    return SafetyDecision(allowed=True, requiresApproval=False, reason="read-like curl action")
+                return SafetyDecision(
+                    allowed=True,
+                    requiresApproval=True,
+                    reason="mutating curl action requires approval in safe mode",
+                )
+
+            if toolCall.tool == "ssh":
+                if not toolCall.host:
+                    return SafetyDecision(allowed=False, requiresApproval=False, reason="missing ssh host")
+                if not toolCall.command:
+                    return SafetyDecision(allowed=False, requiresApproval=False, reason="missing ssh command")
+                return SafetyDecision(
+                    allowed=True,
+                    requiresApproval=True,
+                    reason="ssh command requires approval in safe mode",
+                )
+
             if toolCall.tool == "shell":
                 if not toolCall.command:
                     return SafetyDecision(allowed=False, requiresApproval=False, reason="missing command")

@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import sys
 import uuid
 
 import typer
 
 from e_cli.agent.loop import AgentLoop
 from e_cli.agent.protocol import ToolCall
-from e_cli.config import ApprovalMode, AppConfig, ProviderType, load_config, save_config
+from e_cli.config import ApprovalMode, AppConfig, ProviderType, RagCorpus, get_app_dir, load_config, save_config
 from e_cli.memory.service import MemoryService
 from e_cli.memory.store import MemoryStore
 from e_cli.models.base import ModelMessage
@@ -154,6 +155,25 @@ def _resolveSessionId(config: AppConfig, sessionId: str = "", last: bool = False
     return config.lastSessionId
 
 
+def _readChatInput(promptText: str) -> str:
+    """Read one chat line with terminal editing/history when available."""
+
+    try:
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            try:
+                from prompt_toolkit import prompt as promptToolkitPrompt
+                from prompt_toolkit.history import FileHistory
+
+                historyPath = get_app_dir() / "chat_history.txt"
+                historyPath.parent.mkdir(parents=True, exist_ok=True)
+                return promptToolkitPrompt(promptText, history=FileHistory(str(historyPath)))
+            except Exception:
+                pass
+        return input(promptText)
+    except Exception:
+        return input(promptText)
+
+
 def _buildSafetyPolicy(config: AppConfig) -> SafetyPolicy:
     """Build runtime safety policy from persisted config values."""
 
@@ -207,6 +227,9 @@ def _buildAgentLoop(config: AppConfig) -> AgentLoop:
         streamingEnabled=config.streamingEnabled,
         conversationTokenBudget=config.conversationTokenBudget,
         conversationSummaryBudget=config.conversationSummaryBudget,
+        memoryDbPath=config.memoryPath,
+        ragCorpusDefault=config.ragCorpusDefault,
+        ragTopK=config.ragTopK,
     )
 
 
@@ -225,6 +248,14 @@ def _policySummaryRows(policy: SafetyPolicy) -> list[tuple[str, bool, str]]:
         rows.append(("git.diff", gitDiffDecision.allowed, gitDiffDecision.reason))
         httpGetDecision = policy.evaluate(ToolCall(tool="http.get", url="https://example.com"))
         rows.append(("http.get", httpGetDecision.allowed, httpGetDecision.reason))
+        browserDecision = policy.evaluate(ToolCall(tool="browser", url="https://example.com"))
+        rows.append(("browser", browserDecision.allowed, browserDecision.reason))
+        sshDecision = policy.evaluate(ToolCall(tool="ssh", host="example-host", command="uname -a"))
+        rows.append(("ssh", sshDecision.allowed, sshDecision.reason))
+        curlDecision = policy.evaluate(ToolCall(tool="curl", url="https://example.com", method="GET"))
+        rows.append(("curl", curlDecision.allowed, curlDecision.reason))
+        ragDecision = policy.evaluate(ToolCall(tool="rag.search", query="agent loop", corpus="combined"))
+        rows.append(("rag.search", ragDecision.allowed, ragDecision.reason))
         doneDecision = policy.evaluate(ToolCall(tool="done", reason="completed"))
         rows.append(("done", doneDecision.allowed, doneDecision.reason))
         return rows
@@ -281,7 +312,7 @@ def chat(
 
         while True:
             try:
-                userPrompt = input("~~> ").strip()
+                userPrompt = _readChatInput("~~> ").strip()
             except EOFError:
                 printQuickTip("Interactive chat ended (EOF).")
                 break
@@ -719,18 +750,31 @@ def listTools() -> None:
         for toolName, allowed, reason in rows:
             status = "allowed" if allowed else "blocked"
             printInfo(f"{toolName}: {status} ({reason})")
-        printQuickTip("Use 'e-cli tools run' to validate tool execution before full agent runs.")
+        printQuickTip("Use 'e-cli tools run --tool shell --command \"echo hello\"' to validate tool execution before full agent runs.")
     except Exception as exc:
         printError(str(exc))
 
 
 @toolsApp.command("run")
 def runTool(
-    tool: str = typer.Option(..., "--tool", help="Tool name: shell | file.read | file.write | git.diff | http.get"),
+    tool: str = typer.Option(
+        ...,
+        "--tool",
+        help="Tool name: shell | file.read | file.write | git.diff | http.get | browser | ssh | curl | rag.search",
+    ),
     command: str = typer.Option("", "--command", help="Shell command for --tool shell"),
     path: str = typer.Option("", "--path", help="Target path for file tools"),
-    url: str = typer.Option("", "--url", help="Target URL for --tool http.get"),
+    url: str = typer.Option("", "--url", help="Target URL for --tool http.get | browser | curl"),
     content: str = typer.Option("", "--content", help="Content for --tool file.write"),
+    method: str = typer.Option("GET", "--method", help="HTTP method for --tool curl"),
+    header: list[str] = typer.Option([], "--header", help="Header for --tool curl in key=value format"),
+    host: str = typer.Option("", "--host", help="SSH host for --tool ssh"),
+    user: str = typer.Option("", "--user", help="SSH user for --tool ssh"),
+    port: int = typer.Option(22, "--port", help="SSH port for --tool ssh"),
+    identityFile: str = typer.Option("", "--identity-file", help="SSH identity file for --tool ssh"),
+    query: str = typer.Option("", "--query", help="Search query for --tool rag.search"),
+    corpus: RagCorpus | None = typer.Option(None, "--corpus", help="Corpus for --tool rag.search: session | workspace | combined"),
+    topK: int | None = typer.Option(None, "--top-k", help="Result count for --tool rag.search (1-10)"),
     reason: str = typer.Option("manual tool run", "--reason", help="Reason annotation for policy checks"),
 ) -> None:
     """Run one tool call through policy and router for manual diagnostics."""
@@ -740,9 +784,26 @@ def runTool(
         policy = _buildSafetyPolicy(config)
 
         normalizedTool = tool.strip().lower()
-        if normalizedTool not in {"shell", "file.read", "file.write", "git.diff", "http.get"}:
-            printError("Unsupported tool. Use shell, file.read, file.write, git.diff, or http.get.")
+        supportedTools = {"shell", "file.read", "file.write", "git.diff", "http.get", "browser", "ssh", "curl", "rag.search"}
+        if normalizedTool not in supportedTools:
+            printError("Unsupported tool. Use shell, file.read, file.write, git.diff, http.get, browser, ssh, curl, or rag.search.")
             return
+
+        if topK is not None and (topK < 1 or topK > 10):
+            printError("topK must be between 1 and 10")
+            return
+
+        parsedHeaders: dict[str, str] = {}
+        for rawHeader in header:
+            if "=" not in rawHeader:
+                printError("Headers must use key=value format.")
+                return
+            key, value = rawHeader.split("=", 1)
+            keyText = key.strip()
+            if not keyText:
+                printError("Header key cannot be empty.")
+                return
+            parsedHeaders[keyText] = value.strip()
 
         toolCall = ToolCall(
             tool=normalizedTool,
@@ -750,6 +811,15 @@ def runTool(
             path=path or None,
             url=url or None,
             content=content or None,
+            method=method or None,
+            headers=parsedHeaders or None,
+            host=host or None,
+            user=user or None,
+            port=port if port > 0 else None,
+            identityFile=identityFile or None,
+            query=query or None,
+            corpus=corpus,
+            topK=topK,
             reason=reason,
         )
         decision = policy.evaluate(toolCall)
@@ -763,7 +833,12 @@ def runTool(
                 printError("Action denied by approval mode.")
                 return
 
-        router = ToolRouter(workspaceRoot=Path.cwd())
+        router = ToolRouter(
+            workspaceRoot=Path.cwd(),
+            memoryDbPath=Path(config.memoryPath).expanduser() if config.memoryPath else None,
+            ragCorpusDefault=config.ragCorpusDefault,
+            ragTopK=config.ragTopK,
+        )
         result = router.execute(toolCall=toolCall, timeoutSeconds=config.timeoutSeconds)
         try:
             memoryService = _buildMemoryService(config)
@@ -807,6 +882,8 @@ def showConfig() -> None:
         printInfo(f"temperature={config.temperature}")
         printInfo(f"topP={config.topP}")
         printInfo(f"maxOutputTokens={config.maxOutputTokens}")
+        printInfo(f"ragCorpusDefault={config.ragCorpusDefault}")
+        printInfo(f"ragTopK={config.ragTopK}")
         printInfo(f"providerOptions={json.dumps(config.providerOptions, sort_keys=True)}")
         printQuickTip("Use 'e-cli config set --help' to update one or more values.")
     except Exception as exc:
@@ -818,17 +895,27 @@ def setConfig(
     provider: ProviderType | None = typer.Option(None, "--provider", help="ollama | lmstudio | vllm"),
     model: str = typer.Option("", "--model", help="Model name/id"),
     endpoint: str = typer.Option("", "--endpoint", help="Provider endpoint URL"),
-    safeMode: bool | None = typer.Option(None, "--safe-mode", help="Enable/disable safe mode"),
+    safeMode: bool | None = typer.Option(
+        None,
+        "--safe-mode/--no-safe-mode",
+        help="Enable/disable safe mode",
+    ),
     approvalMode: ApprovalMode | None = typer.Option(None, "--approval-mode", help="interactive | auto-approve | deny"),
     memoryPath: str = typer.Option("", "--memory-path", help="SQLite memory DB path"),
     maxTurns: int | None = typer.Option(None, "--max-turns", help="Maximum agent turns per ask"),
     timeoutSeconds: int | None = typer.Option(None, "--timeout-seconds", help="Model/tool timeout in seconds"),
-    streamingEnabled: bool | None = typer.Option(None, "--streaming-enabled", help="Enable/disable streaming model output"),
+    streamingEnabled: bool | None = typer.Option(
+        None,
+        "--streaming-enabled/--no-streaming-enabled",
+        help="Enable/disable streaming model output",
+    ),
     conversationTokenBudget: int | None = typer.Option(None, "--conversation-token-budget", help="Approximate token budget for recalled session context"),
     conversationSummaryBudget: int | None = typer.Option(None, "--conversation-summary-budget", help="Approximate token budget reserved for summary context"),
     temperature: float | None = typer.Option(None, "--temperature", help="Sampling temperature for model responses"),
     topP: float | None = typer.Option(None, "--top-p", help="Nucleus sampling parameter for model responses"),
     maxOutputTokens: int | None = typer.Option(None, "--max-output-tokens", help="Maximum tokens to generate when supported by the provider"),
+    ragCorpusDefault: RagCorpus | None = typer.Option(None, "--rag-corpus-default", help="Default corpus for rag.search: session | workspace | combined"),
+    ragTopK: int | None = typer.Option(None, "--rag-top-k", help="Default result count for rag.search (1-10)"),
     providerOption: list[str] | None = typer.Option(None, "--provider-option", help="Provider-specific option as key=value; repeatable"),
 ) -> None:
     """Update one or more persisted configuration values in a single command."""
@@ -849,6 +936,8 @@ def setConfig(
         temperatureValue = float(temperature) if isinstance(temperature, int | float) and not isinstance(temperature, bool) else None
         topPValue = float(topP) if isinstance(topP, int | float) and not isinstance(topP, bool) else None
         maxOutputTokensValue = maxOutputTokens if isinstance(maxOutputTokens, int) and not isinstance(maxOutputTokens, bool) else None
+        ragCorpusDefaultValue = ragCorpusDefault if isinstance(ragCorpusDefault, str) else None
+        ragTopKValue = ragTopK if isinstance(ragTopK, int) and not isinstance(ragTopK, bool) else None
         providerOptionValues = providerOption if isinstance(providerOption, list) else []
 
         if provider is not None:
@@ -911,6 +1000,15 @@ def setConfig(
                 return
             config.maxOutputTokens = maxOutputTokensValue
             changedFields.append("maxOutputTokens")
+        if ragCorpusDefaultValue is not None:
+            config.ragCorpusDefault = ragCorpusDefaultValue
+            changedFields.append("ragCorpusDefault")
+        if ragTopKValue is not None:
+            if ragTopKValue < 1 or ragTopKValue > 10:
+                printError("ragTopK must be between 1 and 10")
+                return
+            config.ragTopK = ragTopKValue
+            changedFields.append("ragTopK")
         if providerOptionValues:
             updatedOptions = dict(config.providerOptions)
             for rawOption in providerOptionValues:

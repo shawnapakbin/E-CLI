@@ -8,7 +8,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-ToolName = Literal["shell", "file.read", "file.write", "git.diff", "http.get", "done"]
+ToolName = Literal[
+    "shell",
+    "file.read",
+    "file.write",
+    "git.diff",
+    "http.get",
+    "browser",
+    "ssh",
+    "curl",
+    "rag.search",
+    "done",
+]
 
 
 class ToolCall(BaseModel):
@@ -19,6 +30,15 @@ class ToolCall(BaseModel):
     path: str | None = Field(default=None)
     url: str | None = Field(default=None)
     content: str | None = Field(default=None)
+    method: str | None = Field(default=None)
+    headers: dict[str, str] | None = Field(default=None)
+    host: str | None = Field(default=None)
+    user: str | None = Field(default=None)
+    port: int | None = Field(default=None)
+    identityFile: str | None = Field(default=None)
+    query: str | None = Field(default=None)
+    corpus: str | None = Field(default=None)
+    topK: int | None = Field(default=None)
     reason: str | None = Field(default=None)
 
 

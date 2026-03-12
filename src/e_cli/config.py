@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 ProviderType = Literal["ollama", "lmstudio", "vllm"]
 ApprovalMode = Literal["interactive", "auto-approve", "deny"]
+RagCorpus = Literal["session", "workspace", "combined"]
 
 
 class AppConfig(BaseModel):
@@ -32,6 +33,8 @@ class AppConfig(BaseModel):
     topP: float = Field(default=1.0)
     maxOutputTokens: int = Field(default=0)
     providerOptions: dict[str, bool | int | float | str] = Field(default_factory=dict)
+    ragCorpusDefault: RagCorpus = Field(default="combined")
+    ragTopK: int = Field(default=5)
 
     def modelParameters(self) -> dict[str, bool | int | float | str]:
         """Return normalized model parameters for provider request payloads."""

@@ -31,6 +31,14 @@ def requestApproval(toolCall: ToolCall, reason: str) -> bool:
             printInfo(f"Shell command: {toolCall.command}")
         elif toolCall.tool in {"file.read", "file.write"}:
             printInfo(f"File path: {toolCall.path}")
+        elif toolCall.tool == "browser":
+            printInfo(f"Browser URL: {toolCall.url}")
+        elif toolCall.tool == "ssh":
+            printInfo(f"SSH target: {toolCall.user + '@' if toolCall.user else ''}{toolCall.host}")
+            printInfo(f"SSH command: {toolCall.command}")
+        elif toolCall.tool == "curl":
+            printInfo(f"curl method: {(toolCall.method or 'GET').upper()}")
+            printInfo(f"curl URL: {toolCall.url}")
 
         userInput = input("Allow this action? [y/N]: ").strip().lower()
         return userInput in {"y", "yes"}

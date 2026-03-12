@@ -72,3 +72,40 @@ def test_parse_tool_call_unwraps_nested_json_message_payload() -> None:
     parsed = parse_tool_call('{"message":{"content":"I am E-CLI."}}')
     assert parsed.toolCall is None
     assert parsed.assistantMessage == "I am E-CLI."
+
+
+def test_parse_tool_call_browser_json() -> None:
+    """Verifies parser accepts browser tool payloads."""
+
+    parsed = parse_tool_call('{"tool":"browser","url":"https://example.com"}')
+    assert parsed.toolCall is not None
+    assert parsed.toolCall.tool == "browser"
+    assert parsed.toolCall.url == "https://example.com"
+
+
+def test_parse_tool_call_ssh_json() -> None:
+    """Verifies parser accepts SSH tool payloads with host and command."""
+
+    parsed = parse_tool_call('{"tool":"ssh","host":"server.local","command":"uname -a"}')
+    assert parsed.toolCall is not None
+    assert parsed.toolCall.tool == "ssh"
+    assert parsed.toolCall.host == "server.local"
+
+
+def test_parse_tool_call_curl_json() -> None:
+    """Verifies parser accepts curl tool payloads with method and URL."""
+
+    parsed = parse_tool_call('{"tool":"curl","url":"https://example.com","method":"POST"}')
+    assert parsed.toolCall is not None
+    assert parsed.toolCall.tool == "curl"
+    assert parsed.toolCall.method == "POST"
+
+
+def test_parse_tool_call_rag_search_json() -> None:
+    """Verifies parser accepts rag.search payloads with query/corpus fields."""
+
+    parsed = parse_tool_call('{"tool":"rag.search","query":"router execute","corpus":"combined","topK":5}')
+    assert parsed.toolCall is not None
+    assert parsed.toolCall.tool == "rag.search"
+    assert parsed.toolCall.query == "router execute"
+    assert parsed.toolCall.corpus == "combined"

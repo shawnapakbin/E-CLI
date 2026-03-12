@@ -56,3 +56,55 @@ def test_router_http_get_requires_url() -> None:
     router = ToolRouter(workspaceRoot=Path.cwd())
     result = router.execute(ToolCall(tool="http.get"), timeoutSeconds=1)
     assert result.ok is False
+
+
+def test_router_browser_dispatch(monkeypatch) -> None:
+    """Ensures browser tool dispatches through browser helper."""
+
+    monkeypatch.setattr(
+        "e_cli.tools.router.BrowserTool.open",
+        lambda url, timeout_seconds: type("Result", (), {"ok": True, "output": f"opened {url}"})(),
+    )
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="browser", url="https://example.com"), timeoutSeconds=1)
+    assert result.ok is True
+    assert "opened" in result.output
+
+
+def test_router_ssh_dispatch(monkeypatch) -> None:
+    """Ensures SSH tool dispatches through SSH helper."""
+
+    monkeypatch.setattr(
+        "e_cli.tools.router.SshTool.run",
+        lambda **kwargs: type("Result", (), {"ok": True, "output": "remote ok", "exitCode": 0})(),
+    )
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="ssh", host="server.local", command="uname -a"), timeoutSeconds=1)
+    assert result.ok is True
+    assert "exitCode=0" in result.output
+
+
+def test_router_curl_dispatch(monkeypatch) -> None:
+    """Ensures curl tool dispatches through curl helper."""
+
+    monkeypatch.setattr(
+        "e_cli.tools.router.CurlTool.request",
+        lambda **kwargs: type("Result", (), {"ok": True, "output": "status=200"})(),
+    )
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="curl", url="https://example.com", method="GET"), timeoutSeconds=1)
+    assert result.ok is True
+    assert "status=200" in result.output
+
+
+def test_router_rag_search_dispatch(monkeypatch) -> None:
+    """Ensures rag.search dispatches through rag helper with defaults."""
+
+    monkeypatch.setattr(
+        "e_cli.tools.router.RagTool.search",
+        lambda **kwargs: type("Result", (), {"ok": True, "output": f"rag {kwargs['query']}"})(),
+    )
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="rag.search", query="router execute"), timeoutSeconds=1)
+    assert result.ok is True
+    assert "rag router execute" in result.output

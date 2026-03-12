@@ -80,6 +80,48 @@ def test_agent_loop_completes_with_done_signal(tmp_path: Path, monkeypatch) -> N
     assert any(event.action == "tool.execute" for event in auditEvents)
 
 
+def test_agent_loop_tags_tool_call_as_ai_thinking_and_persists_tool_result_as_user_context(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Ensures tool-call turns are labeled as AI Thinking and tool output is fed back as user context."""
+
+    schemaPath = Path(__file__).resolve().parents[1] / "src" / "e_cli" / "memory" / "schema.sql"
+    store = MemoryStore(dbPath=tmp_path / "memory.db", schemaPath=schemaPath)
+    memoryService = MemoryService(memoryStore=store)
+    policy = SafetyPolicy(safeMode=True, trustedReadCommands=("echo",))
+    modelClient = FakeModelClient()
+    infoLines: list[str] = []
+
+    monkeypatch.setattr("e_cli.safety.approval.requestApproval", lambda _toolCall, _reason: True)
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda message: infoLines.append(message))
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _message: None)
+
+    loop = AgentLoop(
+        modelClient=modelClient,
+        modelName="fake-model",
+        memoryService=memoryService,
+        safetyPolicy=policy,
+        workspaceRoot=tmp_path,
+        timeoutSeconds=5,
+        maxTurns=4,
+        approvalMode="interactive",
+        streamingEnabled=True,
+        conversationTokenBudget=3200,
+        conversationSummaryBudget=800,
+    )
+
+    result = loop.run(userPrompt="say hello", sessionId="s2")
+
+    assert result == "completed"
+    assert any(line.startswith("AI Thinking: {") for line in infoLines)
+
+    entries = store.listAllBySession("s2")
+    toolResultEntries = [entry for entry in entries if entry.content.startswith("[Tool result: shell]\n")]
+    assert toolResultEntries
+    assert all(entry.role == "user" for entry in toolResultEntries)
+
+
 def test_agent_loop_loads_summary_for_long_history(tmp_path: Path) -> None:
     """Verifies token-budgeted recall inserts a summary message for older turns."""
 

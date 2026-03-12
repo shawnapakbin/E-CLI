@@ -95,6 +95,7 @@ class OpenAICompatibleClient(ModelClient):
             stream=True,
         ) as response:
             response.raise_for_status()
+            response.encoding = "utf-8"
             for rawLine in response.iter_lines(decode_unicode=True):
                 if not rawLine:
                     continue

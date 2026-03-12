@@ -8,7 +8,7 @@ E-CLI is a terminal-native LLM agent that runs with local or LAN-served models.
 - JSON tool-calling loop
 - Shell execution with safe mode defaults
 - File read/write tools with workspace boundary checks
-- Native `git.diff` and `http.get` tools for read-only inspection tasks
+- Native `git.diff`, `http.get`, `browser`, `ssh`, `curl`, and `rag.search` tools for web inspection, retrieval, and remote execution
 - SQLite-backed persistent memory
 - Token-budgeted conversation recall with automatic summary compaction
 - Explicit `sessions compact` command to condense older session history into reusable summaries
@@ -16,13 +16,80 @@ E-CLI is a terminal-native LLM agent that runs with local or LAN-served models.
 - Configurable inference parameters: temperature, top-p, max output tokens, and provider-specific raw options
 
 ## Install
+If Python may not be installed yet, use the bootstrap installers.
+
+Linux/macOS:
+
 ```bash
-1. run 'pip install -e .[dev]'
-2. ensure you have a host running on "http://localhost:xxxxx"
-3. run 'e-cli models list'
-4. select the desired model
-5. run 'e-cli'
+bash scripts/bootstrap_install.sh
 ```
+
+Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/bootstrap_install.ps1
+```
+
+Both bootstrap installers:
+- Check whether Python is available
+- Attempt to install Python when it is missing
+- Launch the E-CLI installer automatically after Python is ready
+
+If Python is already installed, you can run the E-CLI installer directly:
+
+```bash
+python3 scripts/install_ecli.py
+```
+
+Windows (PowerShell or Command Prompt):
+
+```powershell
+py -3 scripts/install_ecli.py
+```
+
+Install with development extras:
+
+```bash
+python3 scripts/install_ecli.py --dev
+```
+
+Windows (PowerShell or Command Prompt):
+
+```powershell
+py -3 scripts/install_ecli.py --dev
+```
+
+What the installer does:
+- Installs E-CLI and dependencies with `pip --user`
+- Detects your Python user scripts directory
+- Adds that directory to your `PATH` on Linux, macOS, and Windows
+- Prints a quick-start checklist when installation finishes
+
+If you prefer manual install:
+
+```bash
+python3 -m pip install --user .
+```
+
+Windows (PowerShell or Command Prompt):
+
+```powershell
+py -3 -m pip install --user .
+```
+
+Verify:
+
+```bash
+e-cli --help
+```
+
+If `e-cli` is still not found in the current shell, open a new terminal.
+
+Next steps:
+1. Ensure a model host is running (for example `http://localhost:11434` for Ollama).
+2. Run `e-cli models list`.
+3. Select the desired model.
+4. Run `e-cli`.
 
 ## Quick Start
 ```bash
@@ -37,7 +104,13 @@ e-cli tools list
 e-cli tools run --tool shell --command "echo hello"
 e-cli tools run --tool git.diff --path README.md
 e-cli tools run --tool http.get --url "https://example.com"
+e-cli tools run --tool browser --url "https://example.com"
+e-cli tools run --tool ssh --host example.com --command "uptime"
+e-cli tools run --tool curl --url "https://api.example.com" --method GET
+e-cli tools run --tool curl --url "https://api.example.com" --method POST --header "Authorization=Bearer token" --content '{"ok":true}'
+e-cli tools run --tool rag.search --query "router execute" --corpus workspace --top-k 5
 e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512 --provider-option seed=42
+e-cli config set --rag-corpus-default combined --rag-top-k 5
 e-cli ask "debug why nginx isn't starting"
 e-cli sessions compact --last --dry-run
 e-cli sessions compact --last
@@ -47,6 +120,37 @@ e-cli sessions audit --last
 ## Configuration Guide
 
 Use `e-cli config show` to inspect the active configuration, then update one or more fields with `e-cli config set`.
+
+### Command Syntax Quick Reference
+- Subcommands use hyphens, not concatenated words:
+	- Correct: `e-cli safe-mode status`
+	- Correct: `e-cli safe-mode set false`
+	- Incorrect: `e-cli safemode status`
+- `safe-mode` and `approval` are top-level command groups. They are not part of `config set` unless you are using flags.
+- Boolean flags under `config set` use toggle-style options:
+	- `--safe-mode` to enable
+	- `--no-safe-mode` to disable
+	- `--streaming-enabled` to enable streaming
+	- `--no-streaming-enabled` to disable streaming
+
+Examples:
+```bash
+e-cli safe-mode status
+e-cli safe-mode set false
+e-cli safe-mode set true
+
+e-cli config set --no-safe-mode
+e-cli config set --safe-mode --approval-mode interactive
+
+e-cli config set --no-streaming-enabled
+e-cli config set --streaming-enabled
+```
+
+Common mistakes and fixes:
+- `e-cli safemode disable`
+	- Use: `e-cli safe-mode set false`
+- `e-cli config set --safe-mode false`
+	- Use: `e-cli config set --no-safe-mode`
 
 ### Core Runtime Settings
 - `provider`: Model backend (`ollama`, `lmstudio`, `vllm`)
@@ -66,7 +170,10 @@ e-cli config set --provider lmstudio --endpoint http://localhost:1234 --model ib
 
 Examples:
 ```bash
-e-cli config set --safe-mode true --approval-mode interactive
+e-cli config set --safe-mode --approval-mode interactive
+e-cli config set --no-safe-mode
+e-cli safe-mode set false
+e-cli safe-mode set true
 e-cli safe-mode status
 e-cli approval status
 ```
@@ -94,6 +201,17 @@ e-cli config set --provider-option num_ctx=8192
 Notes:
 - Values are auto-parsed as `bool`, `int`, `float`, then `string`.
 - Provider options are merged into the existing map (not fully replaced).
+
+### RAG Retrieval Defaults
+- `ragCorpusDefault`: Default corpus for `rag.search` (`session`, `workspace`, or `combined`)
+- `ragTopK`: Default number of ranked snippets returned by `rag.search` (1-10)
+
+Examples:
+```bash
+e-cli config set --rag-corpus-default combined --rag-top-k 5
+e-cli tools run --tool rag.search --query "session summary"
+e-cli tools run --tool rag.search --query "ToolRouter execute" --corpus workspace --top-k 3
+```
 
 ### Memory And Context Budget
 - `memoryPath`: SQLite memory database path
@@ -126,6 +244,7 @@ Notes:
 - `e-cli` (no subcommand): Starts interactive chat by default
 - `e-cli chat --last`: Resume last session id
 - In chat: `/help`, `/session`, `/new`, `/exit`
+- Tool intent steps are shown as `AI Thinking: { ... }` lines before execution
 
 ### Troubleshooting Configuration
 ```bash
@@ -140,3 +259,9 @@ If model replies are too random, lower `temperature`. If responses are cut short
 - Safe mode defaults to `on`
 - Trusted read-only shell commands auto-run
 - Mutating commands require approval
+- Browser (read-only page inspection) auto-allowed in safe mode
+- SSH always requires approval in safe mode
+- Curl read-like methods (GET/HEAD/OPTIONS) auto-allowed; mutating methods (POST/PUT/PATCH/DELETE) require approval
+- `rag.search` is read-only retrieval and auto-allowed in safe mode
+
+Use `e-cli tools list` to inspect the active safety policy for all tools.
