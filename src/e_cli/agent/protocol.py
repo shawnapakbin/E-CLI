@@ -105,15 +105,66 @@ def _tryParseToolCall(candidate: str) -> ToolCall | None:
         return None
 
 
+def _extractAssistantText(value: object) -> str | None:
+    """Extract a plain-text assistant response from generic JSON payloads."""
+
+    if isinstance(value, str):
+        normalized = value.strip()
+        return normalized or None
+
+    if isinstance(value, dict):
+        preferredKeys = ("response", "message", "content", "answer", "text")
+        for key in preferredKeys:
+            if key in value:
+                extracted = _extractAssistantText(value[key])
+                if extracted:
+                    return extracted
+
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            extracted = _extractAssistantText(item)
+            if extracted:
+                parts.append(extracted)
+        if parts:
+            return "\n".join(parts)
+
+    return None
+
+
+def _tryParseAssistantJson(candidate: str) -> str | None:
+    """Parse non-tool JSON replies and extract plain assistant text when possible."""
+
+    try:
+        parsedJson = json.loads(candidate)
+        if not isinstance(parsedJson, dict):
+            return None
+        return _extractAssistantText(parsedJson)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+
+
 def parse_tool_call(model_output: str) -> ParsedAgentOutput:
     """Parse model output as JSON tool call and fallback to plain assistant text."""
 
     try:
+        strippedOutput = model_output.strip()
         candidates = _extractJsonObjects(model_output)
         for candidate in candidates:
             toolCall = _tryParseToolCall(candidate)
             if toolCall is not None:
                 return ParsedAgentOutput(toolCall=toolCall, assistantMessage="")
-        return ParsedAgentOutput(toolCall=None, assistantMessage=model_output.strip())
+
+        # Some models wrap normal replies like {"response": "..."}; unwrap these to plain text.
+        assistantJsonText = _tryParseAssistantJson(strippedOutput)
+        if assistantJsonText:
+            return ParsedAgentOutput(toolCall=None, assistantMessage=assistantJsonText)
+
+        for candidate in candidates:
+            candidateAssistantText = _tryParseAssistantJson(candidate)
+            if candidateAssistantText:
+                return ParsedAgentOutput(toolCall=None, assistantMessage=candidateAssistantText)
+
+        return ParsedAgentOutput(toolCall=None, assistantMessage=strippedOutput)
     except Exception:
         return ParsedAgentOutput(toolCall=None, assistantMessage=model_output.strip())

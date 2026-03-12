@@ -56,3 +56,19 @@ def test_parse_tool_call_ignores_invalid_json_objects() -> None:
     assert parsed.toolCall is not None
     assert parsed.toolCall.tool == "done"
     assert parsed.toolCall.reason == "complete"
+
+
+def test_parse_tool_call_unwraps_json_response_payload() -> None:
+    """Verifies non-tool JSON response wrappers are converted to plain assistant text."""
+
+    parsed = parse_tool_call('{"response":"Hello! How can I help?"}')
+    assert parsed.toolCall is None
+    assert parsed.assistantMessage == "Hello! How can I help?"
+
+
+def test_parse_tool_call_unwraps_nested_json_message_payload() -> None:
+    """Verifies nested response/message/content wrappers are flattened to plain text."""
+
+    parsed = parse_tool_call('{"message":{"content":"I am E-CLI."}}')
+    assert parsed.toolCall is None
+    assert parsed.assistantMessage == "I am E-CLI."
