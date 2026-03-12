@@ -43,6 +43,24 @@ def error(message: str) -> None:
         raise RuntimeError(f"Failed to print error message: {exc}") from exc
 
 
+def stream(message: str) -> None:
+    """Print a streaming fragment without forcing a newline."""
+
+    try:
+        console.print(message, style="green", end="", markup=False, highlight=False, soft_wrap=True)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to print stream message: {exc}") from exc
+
+
+def streamBreak() -> None:
+    """Terminate a streaming line with a newline."""
+
+    try:
+        console.print()
+    except Exception as exc:
+        raise RuntimeError(f"Failed to print stream line break: {exc}") from exc
+
+
 def printQuickTip(messageText: str) -> None:
     """Compatibility wrapper for Quick Tip message output."""
 
@@ -68,3 +86,21 @@ def printError(messageText: str) -> None:
         error(messageText)
     except Exception as exc:
         raise RuntimeError(f"Failed in printError: {exc}") from exc
+
+
+def printStream(messageText: str) -> None:
+    """Compatibility wrapper for streaming output fragments."""
+
+    try:
+        stream(messageText)
+    except Exception as exc:
+        raise RuntimeError(f"Failed in printStream: {exc}") from exc
+
+
+def printStreamBreak() -> None:
+    """Compatibility wrapper for ending a streaming output line."""
+
+    try:
+        streamBreak()
+    except Exception as exc:
+        raise RuntimeError(f"Failed in printStreamBreak: {exc}") from exc

@@ -37,6 +37,17 @@ class FakeModelClient:
 
         return ["fake-model"]
 
+    def stream_chat(
+        self,
+        model_name: str,
+        messages: list[ModelMessage],
+        timeout_seconds: int,
+    ) -> list[str]:
+        """Return streaming chunks for the same deterministic response sequence."""
+
+        response = self.chat(model_name=model_name, messages=messages, timeout_seconds=timeout_seconds)
+        return [response.content]
+
 
 def test_agent_loop_completes_with_done_signal(tmp_path: Path, monkeypatch) -> None:
     """Verifies loop returns done reason and persists interaction memory."""
@@ -58,7 +69,27 @@ def test_agent_loop_completes_with_done_signal(tmp_path: Path, monkeypatch) -> N
         timeoutSeconds=5,
         maxTurns=4,
         approvalMode="interactive",
+        streamingEnabled=True,
+        conversationTokenBudget=3200,
+        conversationSummaryBudget=800,
     )
 
     result = loop.run(userPrompt="say hello", sessionId="s1")
     assert result == "completed"
+    auditEvents = memoryService.listAuditEvents(sessionId="s1")
+    assert any(event.action == "tool.execute" for event in auditEvents)
+
+
+def test_agent_loop_loads_summary_for_long_history(tmp_path: Path) -> None:
+    """Verifies token-budgeted recall inserts a summary message for older turns."""
+
+    schemaPath = Path(__file__).resolve().parents[1] / "src" / "e_cli" / "memory" / "schema.sql"
+    store = MemoryStore(dbPath=tmp_path / "memory.db", schemaPath=schemaPath)
+    memoryService = MemoryService(memoryStore=store)
+    for index in range(12):
+        store.append(sessionId="session-long", role="user", content=f"message {index} " + ("x" * 220))
+
+    messages = memoryService.loadConversation(sessionId="session-long", maxTokens=160, summaryTokens=80)
+
+    assert messages[0].role == "system"
+    assert "Prior conversation summary" in messages[0].content

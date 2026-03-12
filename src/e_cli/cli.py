@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import uuid
 
@@ -36,6 +37,14 @@ app.add_typer(toolsApp, name="tools")
 app.add_typer(configApp, name="config")
 
 
+@app.callback(invoke_without_command=True)
+def rootCallback(ctx: typer.Context) -> None:
+    """Start interactive chat when no explicit subcommand is provided."""
+
+    if ctx.invoked_subcommand is None:
+        chat()
+
+
 @dataclass(frozen=True)
 class ModelSelectionOption:
     """Represents one selectable model candidate from endpoint discovery."""
@@ -43,6 +52,32 @@ class ModelSelectionOption:
     provider: ProviderType
     endpoint: str
     model: str
+
+
+def _persistModelSelection(config: AppConfig, selected: ModelSelectionOption) -> None:
+    """Persist one selected model option to active configuration."""
+
+    config.provider = selected.provider
+    config.endpoint = selected.endpoint
+    config.model = selected.model
+    save_config(config)
+
+
+def _chooseModelFromOptions(config: AppConfig, options: list[ModelSelectionOption], index: int = -1) -> bool:
+    """Interactively or directly select a model option and persist it."""
+
+    selectedIndex = index
+    if selectedIndex < 1 or selectedIndex > len(options):
+        userInput = input(f"Select model index [1-{len(options)}]: ").strip()
+        selectedIndex = int(userInput)
+    if selectedIndex < 1 or selectedIndex > len(options):
+        printError("Invalid model selection index.")
+        return False
+
+    selected = options[selectedIndex - 1]
+    _persistModelSelection(config, selected)
+    printInfo(f"Selected {selected.provider}:{selected.model} at {selected.endpoint}")
+    return True
 
 
 def _collectModelOptions(config: AppConfig) -> list[ModelSelectionOption]:
@@ -53,7 +88,7 @@ def _collectModelOptions(config: AppConfig) -> list[ModelSelectionOption]:
         options: list[ModelSelectionOption] = []
         for endpoint in discoveredEndpoints:
             try:
-                modelClient = create_model_client(provider=endpoint.provider, endpoint=endpoint.endpoint)
+                modelClient = _createConfiguredModelClient(config, provider=endpoint.provider, endpoint=endpoint.endpoint)
                 models = modelClient.list_models(timeout_seconds=config.timeoutSeconds)
                 for model in models:
                     options.append(
@@ -80,6 +115,43 @@ def _buildMemoryService(config: AppConfig) -> MemoryService:
         return MemoryService(memoryStore=memoryStore)
     except Exception as exc:
         raise RuntimeError(f"Failed to create memory service: {exc}") from exc
+
+
+def _createConfiguredModelClient(config: AppConfig, provider: ProviderType, endpoint: str):
+    """Create a model client using persisted inference parameters."""
+
+    return create_model_client(
+        provider=provider,
+        endpoint=endpoint,
+        modelParameters=config.modelParameters(),
+    )
+
+
+def _parseProviderOption(rawValue: str) -> bool | int | float | str:
+    """Parse a CLI provider option value into a scalar JSON-compatible type."""
+
+    lowered = rawValue.strip().lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    try:
+        return int(rawValue)
+    except ValueError:
+        pass
+    try:
+        return float(rawValue)
+    except ValueError:
+        return rawValue
+
+
+def _resolveSessionId(config: AppConfig, sessionId: str = "", last: bool = False) -> str:
+    """Resolve an explicit or remembered session id for session commands."""
+
+    sessionIdText = sessionId if isinstance(sessionId, str) else ""
+    if sessionIdText.strip():
+        return sessionIdText.strip()
+    if last:
+        return config.lastSessionId
+    return config.lastSessionId
 
 
 def _buildSafetyPolicy(config: AppConfig) -> SafetyPolicy:
@@ -117,6 +189,27 @@ def _buildSafetyPolicy(config: AppConfig) -> SafetyPolicy:
         raise RuntimeError(f"Failed to build safety policy: {exc}") from exc
 
 
+def _buildAgentLoop(config: AppConfig) -> AgentLoop:
+    """Create a fully configured agent loop from persisted configuration."""
+
+    modelClient = _createConfiguredModelClient(config, provider=config.provider, endpoint=config.endpoint)
+    memoryService = _buildMemoryService(config)
+    safetyPolicy = _buildSafetyPolicy(config)
+    return AgentLoop(
+        modelClient=modelClient,
+        modelName=config.model,
+        memoryService=memoryService,
+        safetyPolicy=safetyPolicy,
+        workspaceRoot=Path.cwd(),
+        timeoutSeconds=config.timeoutSeconds,
+        maxTurns=config.maxTurns,
+        approvalMode=config.approvalMode,
+        streamingEnabled=config.streamingEnabled,
+        conversationTokenBudget=config.conversationTokenBudget,
+        conversationSummaryBudget=config.conversationSummaryBudget,
+    )
+
+
 def _policySummaryRows(policy: SafetyPolicy) -> list[tuple[str, bool, str]]:
     """Build tool policy summary rows for `tools list` output."""
 
@@ -128,6 +221,10 @@ def _policySummaryRows(policy: SafetyPolicy) -> list[tuple[str, bool, str]]:
         rows.append(("file.read", fileReadDecision.allowed, fileReadDecision.reason))
         fileWriteDecision = policy.evaluate(ToolCall(tool="file.write", path="tmp.txt", content="x"))
         rows.append(("file.write", fileWriteDecision.allowed, fileWriteDecision.reason))
+        gitDiffDecision = policy.evaluate(ToolCall(tool="git.diff", path="README.md"))
+        rows.append(("git.diff", gitDiffDecision.allowed, gitDiffDecision.reason))
+        httpGetDecision = policy.evaluate(ToolCall(tool="http.get", url="https://example.com"))
+        rows.append(("http.get", httpGetDecision.allowed, httpGetDecision.reason))
         doneDecision = policy.evaluate(ToolCall(tool="done", reason="completed"))
         rows.append(("done", doneDecision.allowed, doneDecision.reason))
         return rows
@@ -148,27 +245,76 @@ def ask(
             printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
             return
 
-        modelClient = create_model_client(provider=config.provider, endpoint=config.endpoint)
-        memoryService = _buildMemoryService(config)
-        safetyPolicy = _buildSafetyPolicy(config)
-        agentLoop = AgentLoop(
-            modelClient=modelClient,
-            modelName=config.model,
-            memoryService=memoryService,
-            safetyPolicy=safetyPolicy,
-            workspaceRoot=Path.cwd(),
-            timeoutSeconds=config.timeoutSeconds,
-            maxTurns=config.maxTurns,
-            approvalMode=config.approvalMode,
-        )
+        agentLoop = _buildAgentLoop(config)
 
         sessionIdText = sessionId if isinstance(sessionId, str) else ""
         effectiveSessionId = sessionIdText.strip() or config.lastSessionId or str(uuid.uuid4())
         finalAnswer = agentLoop.run(userPrompt=prompt, sessionId=effectiveSessionId)
         config.lastSessionId = effectiveSessionId
         save_config(config)
-        printInfo(finalAnswer)
+        if not getattr(agentLoop, "lastAssistantResponseStreamed", False):
+            printInfo(finalAnswer)
         printQuickTip(f"Session id: {effectiveSessionId}")
+    except Exception as exc:
+        printError(str(exc))
+
+
+@app.command("chat")
+def chat(
+    sessionId: str = typer.Option("", "--session-id", help="Resume or set conversation session id"),
+    last: bool = typer.Option(False, "--last", help="Resume the last active session id"),
+) -> None:
+    """Start an interactive multi-turn chat session."""
+
+    try:
+        config = load_config()
+        if not config.model:
+            printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
+            return
+
+        agentLoop = _buildAgentLoop(config)
+        sessionIdText = sessionId if isinstance(sessionId, str) else ""
+        effectiveSessionId = sessionIdText.strip() or (config.lastSessionId if last else "") or str(uuid.uuid4())
+
+        printQuickTip("Interactive mode started. Use /help for commands.")
+        printQuickTip(f"Session id: {effectiveSessionId}")
+
+        while True:
+            try:
+                userPrompt = input("~~> ").strip()
+            except EOFError:
+                printQuickTip("Interactive chat ended (EOF).")
+                break
+            except KeyboardInterrupt:
+                printQuickTip("Interactive chat interrupted.")
+                break
+
+            if not userPrompt:
+                continue
+
+            normalized = userPrompt.lower()
+            if normalized in {"/exit", "/quit"}:
+                printQuickTip("Interactive chat ended.")
+                break
+            if normalized == "/help":
+                printInfo("/help    Show chat commands")
+                printInfo("/session Show current session id")
+                printInfo("/new     Start a new session id")
+                printInfo("/exit    End interactive chat")
+                continue
+            if normalized == "/session":
+                printInfo(f"sessionId={effectiveSessionId}")
+                continue
+            if normalized == "/new":
+                effectiveSessionId = str(uuid.uuid4())
+                printQuickTip(f"New session id: {effectiveSessionId}")
+                continue
+
+            finalAnswer = agentLoop.run(userPrompt=userPrompt, sessionId=effectiveSessionId)
+            config.lastSessionId = effectiveSessionId
+            save_config(config)
+            if not getattr(agentLoop, "lastAssistantResponseStreamed", False):
+                printInfo(finalAnswer)
     except Exception as exc:
         printError(str(exc))
 
@@ -198,13 +344,15 @@ def doctor() -> None:
 
         policy = _buildSafetyPolicy(config)
         checks.append(("safe-mode", True, f"safeMode={policy.safeMode}, approval={config.approvalMode}"))
+        checks.append(("streaming", True, f"enabled={config.streamingEnabled}"))
+        checks.append(("memory.tokens", True, f"budget={config.conversationTokenBudget}"))
 
         discovered = ModelDiscovery.discover()
         checks.append(("discovery", bool(discovered), f"reachable endpoints={len(discovered)}"))
 
         if modelConfigured:
             try:
-                modelClient = create_model_client(provider=config.provider, endpoint=config.endpoint)
+                modelClient = _createConfiguredModelClient(config, provider=config.provider, endpoint=config.endpoint)
                 modelList = modelClient.list_models(timeout_seconds=config.timeoutSeconds)
                 selectedModelReachable = config.model in modelList
                 checks.append(
@@ -233,25 +381,26 @@ def doctor() -> None:
 
 
 @modelsApp.command("list")
-def listModels() -> None:
-    """Discover model endpoints and print provider/model candidates."""
+def listModels(
+    choose: bool = typer.Option(False, "--choose", help="Pick a model index from the discovered list"),
+) -> None:
+    """Discover model endpoints, print a numbered menu, and optionally choose one."""
 
     try:
         config = load_config()
-        discovered = ModelDiscovery.discover()
-        if not discovered:
+        options = _collectModelOptions(config)
+        if not options:
             printError("No model endpoints discovered.")
             printQuickTip("Start Ollama, LM Studio server, or vLLM and try again.")
             return
 
-        for endpoint in discovered:
-            try:
-                modelClient = create_model_client(provider=endpoint.provider, endpoint=endpoint.endpoint)
-                models = modelClient.list_models(timeout_seconds=config.timeoutSeconds)
-                modelText = ", ".join(models) if models else "(no models returned)"
-                printInfo(f"{endpoint.provider} @ {endpoint.endpoint}: {modelText}")
-            except Exception as providerError:
-                printError(f"{endpoint.provider} @ {endpoint.endpoint}: {providerError}")
+        for optionIndex, option in enumerate(options, start=1):
+            printInfo(f"[{optionIndex}] {option.provider} @ {option.endpoint} -> {option.model}")
+
+        if choose:
+            _chooseModelFromOptions(config, options)
+        else:
+            printQuickTip("Run 'e-cli models list --choose' to select from this menu now.")
     except Exception as exc:
         printError(str(exc))
 
@@ -290,20 +439,7 @@ def selectModel(index: int = typer.Option(-1, "--index", help="1-based model cho
         for optionIndex, option in enumerate(options, start=1):
             printInfo(f"[{optionIndex}] {option.provider} @ {option.endpoint} -> {option.model}")
 
-        selectedIndex = index
-        if selectedIndex < 1 or selectedIndex > len(options):
-            userInput = input(f"Select model index [1-{len(options)}]: ").strip()
-            selectedIndex = int(userInput)
-        if selectedIndex < 1 or selectedIndex > len(options):
-            printError("Invalid model selection index.")
-            return
-
-        selected = options[selectedIndex - 1]
-        config.provider = selected.provider
-        config.endpoint = selected.endpoint
-        config.model = selected.model
-        save_config(config)
-        printInfo(f"Selected {selected.provider}:{selected.model} at {selected.endpoint}")
+        _chooseModelFromOptions(config, options, index=index)
     except Exception as exc:
         printError(str(exc))
 
@@ -318,7 +454,7 @@ def testModel(prompt: str = typer.Option("Reply with OK", "--prompt", help="Smok
             printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
             return
 
-        modelClient = create_model_client(provider=config.provider, endpoint=config.endpoint)
+        modelClient = _createConfiguredModelClient(config, provider=config.provider, endpoint=config.endpoint)
         response = modelClient.chat(
             model_name=config.model,
             messages=[ModelMessage(role="user", content=prompt)],
@@ -412,8 +548,7 @@ def showSession(
 
     try:
         config = load_config()
-        sessionIdText = sessionId if isinstance(sessionId, str) else ""
-        effectiveSessionId = sessionIdText.strip() or config.lastSessionId
+        effectiveSessionId = _resolveSessionId(config=config, sessionId=sessionId)
         if not effectiveSessionId:
             printError("No session id provided and no last session available.")
             printQuickTip("Provide --session-id or run 'e-cli ask' first.")
@@ -421,11 +556,21 @@ def showSession(
 
         memoryService = _buildMemoryService(config)
         entries = memoryService.loadEntries(sessionId=effectiveSessionId, limit=limit)
+        summary = memoryService.getConversationSummary(sessionId=effectiveSessionId)
         if not entries:
-            printError(f"No messages found for session: {effectiveSessionId}")
+            if summary is None:
+                printError(f"No messages found for session: {effectiveSessionId}")
+                return
+            printInfo(f"Session: {effectiveSessionId}")
+            printInfo(
+                f"Compacted summary covers through entry #{summary.coveredUntilId} | updated={summary.updatedAt}"
+            )
+            printInfo(summary.content)
             return
 
         printInfo(f"Session: {effectiveSessionId}")
+        if summary is not None:
+            printInfo(f"Compacted summary covers through entry #{summary.coveredUntilId} | updated={summary.updatedAt}")
         for entry in entries:
             contentPreview = entry.content if len(entry.content) <= 240 else entry.content[:240] + "..."
             printInfo(f"[{entry.createdAt}] {entry.role}: {contentPreview}")
@@ -457,6 +602,112 @@ def continueSession(
         printError(str(exc))
 
 
+@sessionsApp.command("audit")
+def showSessionAudit(
+    sessionId: str = typer.Option("", "--session-id", help="Session id to inspect"),
+    limit: int = typer.Option(20, "--limit", help="Maximum audit events to display"),
+) -> None:
+    """Show persisted audit events for one session id."""
+
+    try:
+        config = load_config()
+        effectiveSessionId = _resolveSessionId(config=config, sessionId=sessionId)
+        if not effectiveSessionId:
+            printError("No session id provided and no last session available.")
+            printQuickTip("Provide --session-id or run 'e-cli ask' first.")
+            return
+
+        memoryService = _buildMemoryService(config)
+        auditEvents = memoryService.listAuditEvents(sessionId=effectiveSessionId, limit=limit)
+        if not auditEvents:
+            printError(f"No audit events found for session: {effectiveSessionId}")
+            return
+
+        printInfo(f"Audit: {effectiveSessionId}")
+        for event in auditEvents:
+            detailPreview = event.details if len(event.details) <= 160 else event.details[:160] + "..."
+            printInfo(
+                f"[{event.createdAt}] {event.action} {event.tool} | "
+                f"status={event.status} | approved={event.approved} | {detailPreview}"
+            )
+    except Exception as exc:
+        printError(str(exc))
+
+
+@sessionsApp.command("compact")
+def compactSession(
+    sessionId: str = typer.Option("", "--session-id", help="Session id to compact"),
+    last: bool = typer.Option(False, "--last", help="Compact the last active session"),
+    keepRecent: int = typer.Option(8, "--keep-recent", help="Minimum number of recent raw messages to keep"),
+    targetTokens: int = typer.Option(0, "--target-tokens", help="Approximate token budget for retained raw messages; 0 uses current config defaults"),
+    dryRun: bool = typer.Option(False, "--dry-run", help="Preview compaction without changing stored session data"),
+    replaceExistingSummary: bool = typer.Option(False, "--replace-existing-summary", help="Discard any existing persisted summary and rebuild from raw retained history"),
+) -> None:
+    """Compact older session history into a stored summary and prune raw entries."""
+
+    try:
+        config = load_config()
+        sessionIdText = sessionId if isinstance(sessionId, str) else ""
+        lastValue = last if isinstance(last, bool) else False
+        keepRecentValue = keepRecent if isinstance(keepRecent, int) and not isinstance(keepRecent, bool) else 8
+        targetTokensValue = targetTokens if isinstance(targetTokens, int) and not isinstance(targetTokens, bool) else 0
+        dryRunValue = dryRun if isinstance(dryRun, bool) else False
+        replaceExistingSummaryValue = replaceExistingSummary if isinstance(replaceExistingSummary, bool) else False
+
+        effectiveSessionId = _resolveSessionId(config=config, sessionId=sessionIdText, last=lastValue)
+        if not effectiveSessionId:
+            printError("No session selected. Use --session-id or --last.")
+            printQuickTip("Run 'e-cli sessions list' to find an id, then compact it.")
+            return
+
+        memoryService = _buildMemoryService(config)
+        effectiveTargetTokens = targetTokensValue if targetTokensValue > 0 else max(
+            400,
+            config.conversationTokenBudget - config.conversationSummaryBudget,
+        )
+        result = memoryService.compactSession(
+            sessionId=effectiveSessionId,
+            keepRecent=keepRecentValue,
+            targetTokens=effectiveTargetTokens,
+            dryRun=dryRunValue,
+            replaceExistingSummary=replaceExistingSummaryValue,
+        )
+
+        if result.compactedEntryCount == 0:
+            printInfo(
+                f"No compaction applied for {effectiveSessionId}; retained {result.retainedEntryCount} message(s)."
+            )
+            return
+
+        modeLabel = "Dry run" if result.dryRun else "Compacted"
+        printInfo(
+            f"{modeLabel} {effectiveSessionId}: compacted={result.compactedEntryCount}, retained={result.retainedEntryCount}, estimatedTokens={result.estimatedTokensCompacted}"
+        )
+        printInfo(
+            f"coveredUntilId={result.coveredUntilId} | deleted={result.deletedEntryCount} | original={result.originalEntryCount}"
+        )
+
+        if not dryRunValue:
+            memoryService.appendAuditEvent(
+                sessionId=effectiveSessionId,
+                action="session.compact",
+                tool="memory",
+                approved=True,
+                status="ok",
+                reason="manual compaction",
+                details=(
+                    f"compacted={result.compactedEntryCount};retained={result.retainedEntryCount};"
+                    f"deleted={result.deletedEntryCount};coveredUntilId={result.coveredUntilId};"
+                    f"estimatedTokens={result.estimatedTokensCompacted}"
+                ),
+            )
+            if config.lastSessionId != effectiveSessionId:
+                config.lastSessionId = effectiveSessionId
+                save_config(config)
+    except Exception as exc:
+        printError(str(exc))
+
+
 @toolsApp.command("list")
 def listTools() -> None:
     """List available tools and their policy posture under current safety config."""
@@ -475,9 +726,10 @@ def listTools() -> None:
 
 @toolsApp.command("run")
 def runTool(
-    tool: str = typer.Option(..., "--tool", help="Tool name: shell | file.read | file.write"),
+    tool: str = typer.Option(..., "--tool", help="Tool name: shell | file.read | file.write | git.diff | http.get"),
     command: str = typer.Option("", "--command", help="Shell command for --tool shell"),
     path: str = typer.Option("", "--path", help="Target path for file tools"),
+    url: str = typer.Option("", "--url", help="Target URL for --tool http.get"),
     content: str = typer.Option("", "--content", help="Content for --tool file.write"),
     reason: str = typer.Option("manual tool run", "--reason", help="Reason annotation for policy checks"),
 ) -> None:
@@ -488,14 +740,15 @@ def runTool(
         policy = _buildSafetyPolicy(config)
 
         normalizedTool = tool.strip().lower()
-        if normalizedTool not in {"shell", "file.read", "file.write"}:
-            printError("Unsupported tool. Use shell, file.read, or file.write.")
+        if normalizedTool not in {"shell", "file.read", "file.write", "git.diff", "http.get"}:
+            printError("Unsupported tool. Use shell, file.read, file.write, git.diff, or http.get.")
             return
 
         toolCall = ToolCall(
             tool=normalizedTool,
             command=command or None,
             path=path or None,
+            url=url or None,
             content=content or None,
             reason=reason,
         )
@@ -512,6 +765,19 @@ def runTool(
 
         router = ToolRouter(workspaceRoot=Path.cwd())
         result = router.execute(toolCall=toolCall, timeoutSeconds=config.timeoutSeconds)
+        try:
+            memoryService = _buildMemoryService(config)
+            memoryService.appendAuditEvent(
+                sessionId=config.lastSessionId or "manual",
+                action="manual.tool.execute",
+                tool=normalizedTool,
+                approved=result.ok,
+                status="ok" if result.ok else "error",
+                reason=reason,
+                details=result.output,
+            )
+        except Exception:
+            pass
         if result.ok:
             printInfo(result.output)
         else:
@@ -535,6 +801,13 @@ def showConfig() -> None:
         printInfo(f"lastSessionId={config.lastSessionId or '(none)'}")
         printInfo(f"maxTurns={config.maxTurns}")
         printInfo(f"timeoutSeconds={config.timeoutSeconds}")
+        printInfo(f"streamingEnabled={config.streamingEnabled}")
+        printInfo(f"conversationTokenBudget={config.conversationTokenBudget}")
+        printInfo(f"conversationSummaryBudget={config.conversationSummaryBudget}")
+        printInfo(f"temperature={config.temperature}")
+        printInfo(f"topP={config.topP}")
+        printInfo(f"maxOutputTokens={config.maxOutputTokens}")
+        printInfo(f"providerOptions={json.dumps(config.providerOptions, sort_keys=True)}")
         printQuickTip("Use 'e-cli config set --help' to update one or more values.")
     except Exception as exc:
         printError(str(exc))
@@ -550,6 +823,13 @@ def setConfig(
     memoryPath: str = typer.Option("", "--memory-path", help="SQLite memory DB path"),
     maxTurns: int | None = typer.Option(None, "--max-turns", help="Maximum agent turns per ask"),
     timeoutSeconds: int | None = typer.Option(None, "--timeout-seconds", help="Model/tool timeout in seconds"),
+    streamingEnabled: bool | None = typer.Option(None, "--streaming-enabled", help="Enable/disable streaming model output"),
+    conversationTokenBudget: int | None = typer.Option(None, "--conversation-token-budget", help="Approximate token budget for recalled session context"),
+    conversationSummaryBudget: int | None = typer.Option(None, "--conversation-summary-budget", help="Approximate token budget reserved for summary context"),
+    temperature: float | None = typer.Option(None, "--temperature", help="Sampling temperature for model responses"),
+    topP: float | None = typer.Option(None, "--top-p", help="Nucleus sampling parameter for model responses"),
+    maxOutputTokens: int | None = typer.Option(None, "--max-output-tokens", help="Maximum tokens to generate when supported by the provider"),
+    providerOption: list[str] | None = typer.Option(None, "--provider-option", help="Provider-specific option as key=value; repeatable"),
 ) -> None:
     """Update one or more persisted configuration values in a single command."""
 
@@ -561,6 +841,15 @@ def setConfig(
         memoryPathText = memoryPath if isinstance(memoryPath, str) else ""
         safeModeValue = safeMode if isinstance(safeMode, bool) else None
         approvalModeValue = approvalMode if isinstance(approvalMode, str) else None
+        maxTurnsValue = maxTurns if isinstance(maxTurns, int) and not isinstance(maxTurns, bool) else None
+        timeoutSecondsValue = timeoutSeconds if isinstance(timeoutSeconds, int) and not isinstance(timeoutSeconds, bool) else None
+        streamingEnabledValue = streamingEnabled if isinstance(streamingEnabled, bool) else None
+        conversationTokenBudgetValue = conversationTokenBudget if isinstance(conversationTokenBudget, int) and not isinstance(conversationTokenBudget, bool) else None
+        conversationSummaryBudgetValue = conversationSummaryBudget if isinstance(conversationSummaryBudget, int) and not isinstance(conversationSummaryBudget, bool) else None
+        temperatureValue = float(temperature) if isinstance(temperature, int | float) and not isinstance(temperature, bool) else None
+        topPValue = float(topP) if isinstance(topP, int | float) and not isinstance(topP, bool) else None
+        maxOutputTokensValue = maxOutputTokens if isinstance(maxOutputTokens, int) and not isinstance(maxOutputTokens, bool) else None
+        providerOptionValues = providerOption if isinstance(providerOption, list) else []
 
         if provider is not None:
             config.provider = provider
@@ -580,18 +869,62 @@ def setConfig(
         if memoryPathText.strip():
             config.memoryPath = memoryPathText.strip()
             changedFields.append("memoryPath")
-        if maxTurns is not None:
-            if maxTurns < 1:
+        if maxTurnsValue is not None:
+            if maxTurnsValue < 1:
                 printError("maxTurns must be >= 1")
                 return
-            config.maxTurns = maxTurns
+            config.maxTurns = maxTurnsValue
             changedFields.append("maxTurns")
-        if timeoutSeconds is not None:
-            if timeoutSeconds < 1:
+        if timeoutSecondsValue is not None:
+            if timeoutSecondsValue < 1:
                 printError("timeoutSeconds must be >= 1")
                 return
-            config.timeoutSeconds = timeoutSeconds
+            config.timeoutSeconds = timeoutSecondsValue
             changedFields.append("timeoutSeconds")
+        if streamingEnabledValue is not None:
+            config.streamingEnabled = streamingEnabledValue
+            changedFields.append("streamingEnabled")
+        if conversationTokenBudgetValue is not None:
+            if conversationTokenBudgetValue < 256:
+                printError("conversationTokenBudget must be >= 256")
+                return
+            config.conversationTokenBudget = conversationTokenBudgetValue
+            changedFields.append("conversationTokenBudget")
+        if conversationSummaryBudgetValue is not None:
+            if conversationSummaryBudgetValue < 128:
+                printError("conversationSummaryBudget must be >= 128")
+                return
+            config.conversationSummaryBudget = conversationSummaryBudgetValue
+            changedFields.append("conversationSummaryBudget")
+        if temperatureValue is not None:
+            config.temperature = temperatureValue
+            changedFields.append("temperature")
+        if topPValue is not None:
+            if topPValue <= 0:
+                printError("topP must be > 0")
+                return
+            config.topP = topPValue
+            changedFields.append("topP")
+        if maxOutputTokensValue is not None:
+            if maxOutputTokensValue < 0:
+                printError("maxOutputTokens must be >= 0")
+                return
+            config.maxOutputTokens = maxOutputTokensValue
+            changedFields.append("maxOutputTokens")
+        if providerOptionValues:
+            updatedOptions = dict(config.providerOptions)
+            for rawOption in providerOptionValues:
+                if "=" not in rawOption:
+                    printError("providerOption must use key=value format")
+                    return
+                key, rawValue = rawOption.split("=", 1)
+                keyText = key.strip()
+                if not keyText:
+                    printError("providerOption key cannot be empty")
+                    return
+                updatedOptions[keyText] = _parseProviderOption(rawValue.strip())
+            config.providerOptions = updatedOptions
+            changedFields.append("providerOptions")
 
         if not changedFields:
             printError("No changes specified. Provide at least one --option to update.")

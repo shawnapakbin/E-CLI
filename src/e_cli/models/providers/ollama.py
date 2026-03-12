@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Iterator
+from typing import Any
+
 import requests
 
 from e_cli.models.base import ModelClient, ModelMessage, ModelResponse
@@ -12,10 +16,19 @@ class OllamaClient(ModelClient):
 
     provider_name = "ollama"
 
-    def __init__(self, endpoint: str) -> None:
+    def __init__(self, endpoint: str, modelParameters: dict[str, Any] | None = None) -> None:
         """Store normalized endpoint base URL for API calls."""
 
         self.endpoint = endpoint.rstrip("/")
+        self.modelParameters = dict(modelParameters or {})
+
+    def _build_options(self) -> dict[str, Any]:
+        """Translate generic model parameters into Ollama request options."""
+
+        options = dict(self.modelParameters)
+        if "max_output_tokens" in options and "num_predict" not in options:
+            options["num_predict"] = options.pop("max_output_tokens")
+        return options
 
     def chat(self, model_name: str, messages: list[ModelMessage], timeout_seconds: int) -> ModelResponse:
         """Invoke Ollama chat API and normalize content payload to a text response."""
@@ -28,6 +41,9 @@ class OllamaClient(ModelClient):
                 for message in messages
             ],
         }
+        options = self._build_options()
+        if options:
+            payload["options"] = options
         response = requests.post(
             f"{self.endpoint}/api/chat",
             json=payload,
@@ -37,6 +53,40 @@ class OllamaClient(ModelClient):
         body = response.json()
         content = body.get("message", {}).get("content", "")
         return ModelResponse(content=str(content))
+
+    def stream_chat(
+        self,
+        model_name: str,
+        messages: list[ModelMessage],
+        timeout_seconds: int,
+    ) -> Iterator[str]:
+        """Yield content chunks from Ollama's newline-delimited streaming API."""
+
+        payload = {
+            "model": model_name,
+            "stream": True,
+            "messages": [
+                {"role": message.role, "content": message.content}
+                for message in messages
+            ],
+        }
+        options = self._build_options()
+        if options:
+            payload["options"] = options
+        with requests.post(
+            f"{self.endpoint}/api/chat",
+            json=payload,
+            timeout=timeout_seconds,
+            stream=True,
+        ) as response:
+            response.raise_for_status()
+            for rawLine in response.iter_lines(decode_unicode=True):
+                if not rawLine:
+                    continue
+                payloadLine = json.loads(rawLine)
+                chunk = str(payloadLine.get("message", {}).get("content", ""))
+                if chunk:
+                    yield chunk
 
     def list_models(self, timeout_seconds: int) -> list[str]:
         """Fetch model tags from Ollama endpoint and return model names."""

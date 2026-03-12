@@ -31,9 +31,17 @@ def test_save_and_reload_config(monkeypatch, tmp_path: Path) -> None:
     """Ensures saved configuration values are persisted and reloaded."""
 
     monkeypatch.setenv("APPDATA", str(tmp_path))
-    inputConfig = AppConfig(provider="vllm", model="m1", endpoint="http://1.2.3.4:8000")
+    inputConfig = AppConfig(
+        provider="vllm",
+        model="m1",
+        endpoint="http://1.2.3.4:8000",
+        temperature=0.6,
+        providerOptions={"seed": 9},
+    )
     save_config(inputConfig)
 
     loadedJson = json.loads(get_config_path().read_text(encoding="utf-8"))
     assert loadedJson["provider"] == "vllm"
     assert loadedJson["model"] == "m1"
+    assert loadedJson["temperature"] == 0.6
+    assert loadedJson["providerOptions"] == {"seed": 9}

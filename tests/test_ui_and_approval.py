@@ -11,17 +11,21 @@ def test_message_wrappers(monkeypatch) -> None:
     captured: list[str] = []
 
     class FakeConsole:
-        def print(self, text: str) -> None:
+        def print(self, text: str = "", **kwargs: object) -> None:
+            _ = kwargs
             captured.append(text)
 
     monkeypatch.setattr(messages, "console", FakeConsole())
     messages.printInfo("info")
     messages.printError("error")
     messages.printQuickTip("tip")
+    messages.printStream("stream")
+    messages.printStreamBreak()
 
     assert any("info" in line for line in captured)
     assert any("error" in line for line in captured)
     assert any("tip" in line for line in captured)
+    assert any("stream" in line for line in captured)
 
 
 def test_request_approval_yes(monkeypatch) -> None:

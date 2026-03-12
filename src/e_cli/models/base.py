@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Iterator, Protocol
 
 
 @dataclass(slots=True)
@@ -19,6 +19,7 @@ class ModelResponse:
     """Represents one model response payload after provider normalization."""
 
     content: str
+    streamed: bool = False
 
 
 class ModelClient(Protocol):
@@ -28,6 +29,14 @@ class ModelClient(Protocol):
 
     def chat(self, model_name: str, messages: list[ModelMessage], timeout_seconds: int) -> ModelResponse:
         """Send a chat request and return the normalized response."""
+
+    def stream_chat(
+        self,
+        model_name: str,
+        messages: list[ModelMessage],
+        timeout_seconds: int,
+    ) -> Iterator[str]:
+        """Yield incremental response chunks when the provider supports streaming."""
 
     def list_models(self, timeout_seconds: int) -> list[str]:
         """List available models for endpoint selection."""

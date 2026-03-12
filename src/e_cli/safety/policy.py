@@ -44,6 +44,12 @@ class SafetyPolicy:
             if toolCall.tool == "file.read":
                 return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only file action")
 
+            if toolCall.tool == "git.diff":
+                return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only git action")
+
+            if toolCall.tool == "http.get":
+                return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only http action")
+
             if toolCall.tool == "shell":
                 if not toolCall.command:
                     return SafetyDecision(allowed=False, requiresApproval=False, reason="missing command")

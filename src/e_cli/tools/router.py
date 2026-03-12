@@ -7,6 +7,8 @@ from pathlib import Path
 
 from e_cli.agent.protocol import ToolCall, ToolResult
 from e_cli.tools.file_tool import FileTool
+from e_cli.tools.git_tool import GitTool
+from e_cli.tools.http_tool import HttpTool
 from e_cli.tools.shell_tool import ShellTool
 
 
@@ -28,6 +30,16 @@ class ToolRouter:
                     ok=shellResult.ok,
                     output=f"exitCode={shellResult.exitCode}\n{shellResult.output}",
                 )
+
+            if toolCall.tool == "git.diff":
+                gitResult = GitTool(self.workspaceRoot).diff(path=toolCall.path, timeout_seconds=timeoutSeconds)
+                return ToolResult(ok=gitResult.ok, output=gitResult.output)
+
+            if toolCall.tool == "http.get":
+                if not toolCall.url:
+                    return ToolResult(ok=False, output="Missing URL for http.get.")
+                httpResult = HttpTool.get(url=toolCall.url, timeout_seconds=timeoutSeconds)
+                return ToolResult(ok=httpResult.ok, output=httpResult.output)
 
             fileTool = FileTool(self.workspaceRoot)
             if toolCall.tool == "file.read":

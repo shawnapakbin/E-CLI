@@ -46,3 +46,16 @@ def test_blocked_shell_pattern_ignored_when_safe_mode_disabled() -> None:
     decision = policy.evaluate(ToolCall(tool="shell", command="rm -rf /"))
     assert decision.allowed is True
     assert decision.requiresApproval is False
+
+
+def test_read_only_native_tools_auto_allowed() -> None:
+    """Ensures git diff and HTTP GET remain auto-allowed in safe mode."""
+
+    policy = SafetyPolicy(safeMode=True, trustedReadCommands=("echo",))
+    gitDecision = policy.evaluate(ToolCall(tool="git.diff", path="README.md"))
+    httpDecision = policy.evaluate(ToolCall(tool="http.get", url="https://example.com"))
+
+    assert gitDecision.allowed is True
+    assert gitDecision.requiresApproval is False
+    assert httpDecision.allowed is True
+    assert httpDecision.requiresApproval is False

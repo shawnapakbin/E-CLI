@@ -25,6 +25,25 @@ class AppConfig(BaseModel):
     lastSessionId: str = Field(default="")
     maxTurns: int = Field(default=8)
     timeoutSeconds: int = Field(default=60)
+    streamingEnabled: bool = Field(default=True)
+    conversationTokenBudget: int = Field(default=3200)
+    conversationSummaryBudget: int = Field(default=800)
+    temperature: float = Field(default=0.2)
+    topP: float = Field(default=1.0)
+    maxOutputTokens: int = Field(default=0)
+    providerOptions: dict[str, bool | int | float | str] = Field(default_factory=dict)
+
+    def modelParameters(self) -> dict[str, bool | int | float | str]:
+        """Return normalized model parameters for provider request payloads."""
+
+        parameters: dict[str, bool | int | float | str] = {
+            "temperature": self.temperature,
+            "top_p": self.topP,
+        }
+        if self.maxOutputTokens > 0:
+            parameters["max_output_tokens"] = self.maxOutputTokens
+        parameters.update(self.providerOptions)
+        return parameters
 
 
 def get_app_dir() -> Path:

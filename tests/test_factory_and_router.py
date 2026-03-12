@@ -35,3 +35,24 @@ def test_router_file_read_missing_path() -> None:
     router = ToolRouter(workspaceRoot=Path.cwd())
     result = router.execute(ToolCall(tool="file.read"), timeoutSeconds=1)
     assert result.ok is False
+
+
+def test_router_git_diff_dispatch(monkeypatch) -> None:
+    """Ensures git diff tool dispatches through the native git helper."""
+
+    monkeypatch.setattr(
+        "e_cli.tools.router.GitTool.diff",
+        lambda self, path, timeout_seconds: type("Result", (), {"ok": True, "output": "diff --git"})(),
+    )
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="git.diff", path="README.md"), timeoutSeconds=1)
+    assert result.ok is True
+    assert "diff --git" in result.output
+
+
+def test_router_http_get_requires_url() -> None:
+    """Ensures http.get returns a validation error when URL is missing."""
+
+    router = ToolRouter(workspaceRoot=Path.cwd())
+    result = router.execute(ToolCall(tool="http.get"), timeoutSeconds=1)
+    assert result.ok is False
