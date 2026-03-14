@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from e_cli.agent.loop import AgentLoop
+from e_cli.agent.loop import AgentError, AgentLoop, build_system_prompt
 from e_cli.memory.service import MemoryService
 from e_cli.memory.store import MemoryStore
 from e_cli.models.base import ModelMessage, ModelResponse
@@ -135,3 +135,76 @@ def test_agent_loop_loads_summary_for_long_history(tmp_path: Path) -> None:
 
     assert messages[0].role == "system"
     assert "Prior conversation summary" in messages[0].content
+
+
+def test_build_system_prompt_contains_tool_names() -> None:
+    """Ensures build_system_prompt includes all core tool names in the output."""
+
+    prompt = build_system_prompt()
+    for tool_name in ("shell", "file.read", "file.write", "git.diff", "http.get",
+                      "browser", "ssh", "curl", "rag.search", "done"):
+        assert tool_name in prompt
+
+
+def test_build_system_prompt_custom_persona() -> None:
+    """Ensures a custom persona string appears in the built prompt."""
+
+    prompt = build_system_prompt(persona="You are a setup assistant.")
+    assert "You are a setup assistant." in prompt
+
+
+def test_build_system_prompt_extra_schemas_injected() -> None:
+    """Ensures extra tool schemas passed by callers appear in the built prompt."""
+
+    extra = ['{"tool":"my_skill","query":"..."}']
+    prompt = build_system_prompt(extra_tool_schemas=extra)
+    assert "my_skill" in prompt
+
+
+def test_agent_error_enum_values() -> None:
+    """Ensures AgentError enum has the expected classification codes."""
+
+    codes = {e.value for e in AgentError}
+    assert "PARSE_ERROR" in codes
+    assert "MAX_TURNS" in codes
+    assert "MODEL_TIMEOUT" in codes
+    assert "TOOL_EXEC_ERROR" in codes
+
+
+def test_agent_loop_generic_exception_raises_runtime_error(tmp_path: Path, monkeypatch) -> None:
+    """Ensures unknown exceptions from the loop are wrapped as classified RuntimeErrors."""
+
+    schemaPath = Path(__file__).resolve().parents[1] / "src" / "e_cli" / "memory" / "schema.sql"
+    store = MemoryStore(dbPath=tmp_path / "memory.db", schemaPath=schemaPath)
+    memoryService = MemoryService(memoryStore=store)
+    policy = SafetyPolicy(safeMode=False, trustedReadCommands=())
+
+    class ExplodingModelClient:
+        provider_name = "fake"
+
+        def chat(self, model_name, messages, timeout_seconds):  # noqa: ANN001
+            raise ValueError("unexpected model error")
+
+        def list_models(self, timeout_seconds):  # noqa: ANN001
+            return []
+
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+
+    loop = AgentLoop(
+        modelClient=ExplodingModelClient(),
+        modelName="bad-model",
+        memoryService=memoryService,
+        safetyPolicy=policy,
+        workspaceRoot=tmp_path,
+        timeoutSeconds=5,
+        maxTurns=4,
+        approvalMode="auto-approve",
+        streamingEnabled=False,
+        conversationTokenBudget=3200,
+        conversationSummaryBudget=800,
+    )
+
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="TOOL_EXEC_ERROR"):
+        loop.run(userPrompt="trigger failure", sessionId="err-session")

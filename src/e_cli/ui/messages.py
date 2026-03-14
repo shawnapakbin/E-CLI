@@ -104,3 +104,12 @@ def printStreamBreak() -> None:
         streamBreak()
     except Exception as exc:
         raise RuntimeError(f"Failed in printStreamBreak: {exc}") from exc
+
+
+def printWarning(messageText: str) -> None:
+    """Compatibility wrapper for warning message output."""
+
+    try:
+        warn(messageText)
+    except Exception as exc:
+        raise RuntimeError(f"Failed in printWarning: {exc}") from exc

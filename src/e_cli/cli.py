@@ -12,7 +12,7 @@ import typer
 
 from e_cli.agent.loop import AgentLoop
 from e_cli.agent.protocol import ToolCall
-from e_cli.config import ApprovalMode, AppConfig, ProviderType, RagCorpus, get_app_dir, load_config, save_config
+from e_cli.config import ApprovalMode, AppConfig, ProviderType, RagCorpus, get_app_dir, load_config, load_config_with_env_overrides, save_config
 from e_cli.memory.service import MemoryService
 from e_cli.memory.store import MemoryStore
 from e_cli.models.base import ModelMessage
@@ -271,7 +271,7 @@ def ask(
     """Run one full agent session for a user prompt."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         if not config.model:
             printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
             return
@@ -298,7 +298,7 @@ def chat(
     """Start an interactive multi-turn chat session."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         if not config.model:
             printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
             return
@@ -355,7 +355,7 @@ def doctor() -> None:
     """Run local diagnostics for config, model connectivity, safety, and memory."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         checks: list[tuple[str, bool, str]] = []
 
         modelConfigured = bool(config.model.strip())
@@ -418,7 +418,7 @@ def listModels(
     """Discover model endpoints, print a numbered menu, and optionally choose one."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         options = _collectModelOptions(config)
         if not options:
             printError("No model endpoints discovered.")
@@ -445,7 +445,7 @@ def useModel(
     """Persist active provider/model selection in local configuration."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         config.provider = provider
         config.endpoint = endpoint
         config.model = model
@@ -460,7 +460,7 @@ def selectModel(index: int = typer.Option(-1, "--index", help="1-based model cho
     """Interactively select a discovered model and persist provider endpoint settings."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         options = _collectModelOptions(config)
         if not options:
             printError("No model options discovered.")
@@ -480,7 +480,7 @@ def testModel(prompt: str = typer.Option("Reply with OK", "--prompt", help="Smok
     """Send a quick prompt to the selected model to validate live inference path."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         if not config.model:
             printError("No model selected. Run 'e-cli models list' and then 'e-cli models use'.")
             return
@@ -504,7 +504,7 @@ def safeModeStatus() -> None:
     """Print current safe mode status from persisted configuration."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         printInfo(f"safeMode={config.safeMode}")
     except Exception as exc:
         printError(str(exc))
@@ -515,7 +515,7 @@ def setSafeMode(enabled: bool = typer.Argument(..., help="true or false")) -> No
     """Enable or disable safe mode in persisted configuration."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         config.safeMode = enabled
         save_config(config)
         printInfo(f"safeMode set to {enabled}")
@@ -528,7 +528,7 @@ def approvalStatus() -> None:
     """Print current approval mode for mutating operations."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         printInfo(f"approvalMode={config.approvalMode}")
     except Exception as exc:
         printError(str(exc))
@@ -539,7 +539,7 @@ def approvalSet(mode: ApprovalMode = typer.Argument(..., help="interactive | aut
     """Set approval mode to support interactive or batch execution flows."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         config.approvalMode = mode
         save_config(config)
         printInfo(f"approvalMode set to {mode}")
@@ -552,7 +552,7 @@ def listSessions(limit: int = typer.Option(20, "--limit", help="Maximum sessions
     """List recent conversation sessions from persistent memory."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         memoryService = _buildMemoryService(config)
         sessions = memoryService.listSessions(limit=limit)
         if not sessions:
@@ -578,7 +578,7 @@ def showSession(
     """Show conversation messages for one session id."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         effectiveSessionId = _resolveSessionId(config=config, sessionId=sessionId)
         if not effectiveSessionId:
             printError("No session id provided and no last session available.")
@@ -618,7 +618,7 @@ def continueSession(
     """Continue a prior session by reusing a selected or remembered session id."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         sessionIdText = sessionId if isinstance(sessionId, str) else ""
         effectiveSessionId = sessionIdText.strip()
         if not effectiveSessionId and last:
@@ -641,7 +641,7 @@ def showSessionAudit(
     """Show persisted audit events for one session id."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         effectiveSessionId = _resolveSessionId(config=config, sessionId=sessionId)
         if not effectiveSessionId:
             printError("No session id provided and no last session available.")
@@ -677,7 +677,7 @@ def compactSession(
     """Compact older session history into a stored summary and prune raw entries."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         sessionIdText = sessionId if isinstance(sessionId, str) else ""
         lastValue = last if isinstance(last, bool) else False
         keepRecentValue = keepRecent if isinstance(keepRecent, int) and not isinstance(keepRecent, bool) else 8
@@ -744,7 +744,7 @@ def listTools() -> None:
     """List available tools and their policy posture under current safety config."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         policy = _buildSafetyPolicy(config)
         rows = _policySummaryRows(policy)
         for toolName, allowed, reason in rows:
@@ -780,7 +780,7 @@ def runTool(
     """Run one tool call through policy and router for manual diagnostics."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         policy = _buildSafetyPolicy(config)
 
         normalizedTool = tool.strip().lower()
@@ -866,7 +866,7 @@ def showConfig() -> None:
     """Display active configuration values with safe redaction guidance."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         printInfo(f"provider={config.provider}")
         printInfo(f"model={config.model or '(not set)'}")
         printInfo(f"endpoint={config.endpoint}")
@@ -921,7 +921,7 @@ def setConfig(
     """Update one or more persisted configuration values in a single command."""
 
     try:
-        config = load_config()
+        config = load_config_with_env_overrides()
         changedFields: list[str] = []
         modelText = model if isinstance(model, str) else ""
         endpointText = endpoint if isinstance(endpoint, str) else ""

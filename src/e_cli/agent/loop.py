@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
+import logging
 from pathlib import Path
 from typing import cast
 
@@ -13,26 +15,79 @@ from e_cli.models.base import ModelClient, ModelMessage, ModelResponse
 from e_cli.safety.approval import requestApprovalWithMode
 from e_cli.safety.policy import SafetyPolicy
 from e_cli.tools.router import ToolRouter
-from e_cli.ui.messages import printInfo, printQuickTip
+from e_cli.ui.messages import printInfo, printQuickTip, printWarning
+
+_log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Structured error categories
+# ---------------------------------------------------------------------------
+
+class AgentError(str, Enum):
+    """Distinct failure categories surfaced by the agent loop."""
+
+    PARSE_ERROR = "PARSE_ERROR"
+    POLICY_BLOCK = "POLICY_BLOCK"
+    APPROVAL_DENIED = "APPROVAL_DENIED"
+    TOOL_EXEC_ERROR = "TOOL_EXEC_ERROR"
+    MODEL_TIMEOUT = "MODEL_TIMEOUT"
+    MEMORY_ERROR = "MEMORY_ERROR"
+    MAX_TURNS = "MAX_TURNS"
 
 
-SYSTEM_PROMPT = """You are E-CLI, a terminal-native assistant with access to tools.
+_RECOVERY_HINTS: dict[AgentError, str] = {
+    AgentError.PARSE_ERROR: "Lower temperature or check that the model follows instruction format.",
+    AgentError.POLICY_BLOCK: "Run 'e-cli safe-mode status' to review the active policy.",
+    AgentError.APPROVAL_DENIED: "Re-run with --approval-mode auto-approve if the action is safe.",
+    AgentError.TOOL_EXEC_ERROR: "Run 'e-cli sessions audit --last' to inspect the error details.",
+    AgentError.MODEL_TIMEOUT: "Increase timeoutSeconds or restart the model server.",
+    AgentError.MEMORY_ERROR: "Run 'e-cli doctor' to inspect memory DB health.",
+    AgentError.MAX_TURNS: "Increase maxTurns with 'e-cli config set --max-turns N' or break the task into smaller steps.",
+}
 
-To use a tool, respond with ONLY a JSON object (no code fences):
-{"tool":"shell","command":"...","reason":"..."}
-{"tool":"file.read","path":"...","reason":"..."}
-{"tool":"file.write","path":"...","content":"...","reason":"..."}
-{"tool":"git.diff","path":"optional","reason":"..."}
-{"tool":"http.get","url":"https://...","reason":"..."}
-{"tool":"browser","url":"https://...","reason":"..."}
-{"tool":"ssh","host":"...","command":"...","reason":"..."}
-{"tool":"curl","url":"https://...","method":"GET","reason":"..."}
-{"tool":"rag.search","query":"...","corpus":"session|workspace|combined","topK":5,"reason":"..."}
-{"tool":"done","reason":"..."}
 
-When you receive a [Tool result: ...] message, use it to answer the user and avoid repeating the same tool call.
-For normal replies, return plain text only.
-"""
+# ---------------------------------------------------------------------------
+# Dynamic system prompt builder
+# ---------------------------------------------------------------------------
+
+_TOOL_SCHEMAS: list[str] = [
+    '{"tool":"shell","command":"...","reason":"..."}',
+    '{"tool":"file.read","path":"...","reason":"..."}',
+    '{"tool":"file.write","path":"...","content":"...","reason":"..."}',
+    '{"tool":"git.diff","path":"optional","reason":"..."}',
+    '{"tool":"http.get","url":"https://...","reason":"..."}',
+    '{"tool":"browser","url":"https://...","reason":"..."}',
+    '{"tool":"ssh","host":"...","command":"...","reason":"..."}',
+    '{"tool":"curl","url":"https://...","method":"GET","reason":"..."}',
+    '{"tool":"rag.search","query":"...","corpus":"session|workspace|combined","topK":5,"reason":"..."}',
+    '{"tool":"done","reason":"..."}',
+]
+
+
+def build_system_prompt(
+    extra_tool_schemas: list[str] | None = None,
+    persona: str | None = None,
+) -> str:
+    """Build the system prompt from the registered tool schema list and optional persona.
+
+    Callers can inject additional tool schemas (e.g. from loaded skills) or override
+    the assistant persona for custom task modes such as the setup-helper.
+    """
+
+    schemas = list(_TOOL_SCHEMAS)
+    if extra_tool_schemas:
+        schemas.extend(extra_tool_schemas)
+
+    tool_block = "\n".join(schemas)
+    persona_line = persona if persona else "You are E-CLI, a terminal-native assistant with access to tools."
+
+    return (
+        f"{persona_line}\n\n"
+        "To use a tool, respond with ONLY a JSON object (no code fences):\n"
+        f"{tool_block}\n\n"
+        "When you receive a [Tool result: ...] message, use it to answer the user and avoid repeating the same tool call.\n"
+        "For normal replies, return plain text only.\n"
+    )
 
 
 @dataclass(slots=True)
@@ -54,6 +109,10 @@ class AgentLoop:
     ragCorpusDefault: str = "combined"
     ragTopK: int = 5
     lastAssistantResponseStreamed: bool = False
+    #: Optional persona string injected into the system prompt (e.g. for setup-helper mode).
+    persona: str | None = None
+    #: Optional extra tool schemas injected by loaded skills.
+    extraToolSchemas: list[str] | None = None
 
     def _requestModelResponse(self, conversationHistory: list[ModelMessage]) -> ModelResponse:
         """Request one model response, preferring provider streaming when enabled."""
@@ -108,8 +167,9 @@ class AgentLoop:
                 reason=reason,
                 details=details[:2000],
             )
-        except Exception:
-            return
+        except Exception as auditExc:
+            _log.warning("Audit write failed (session %s action %s): %s", sessionId, action, auditExc)
+            printWarning(f"Audit record could not be saved: {auditExc}")
 
     def run(self, userPrompt: str, sessionId: str) -> str:
         """Runs the iterative tool-calling loop until completion or turn budget exhaustion."""
@@ -129,10 +189,14 @@ class AgentLoop:
                 maxTokens=self.conversationTokenBudget,
                 summaryTokens=self.conversationSummaryBudget,
             )
+            systemPrompt = build_system_prompt(
+                extra_tool_schemas=self.extraToolSchemas,
+                persona=self.persona,
+            )
             if not conversationHistory:
-                conversationHistory = [ModelMessage(role="system", content=SYSTEM_PROMPT)]
+                conversationHistory = [ModelMessage(role="system", content=systemPrompt)]
             else:
-                conversationHistory.insert(0, ModelMessage(role="system", content=SYSTEM_PROMPT))
+                conversationHistory.insert(0, ModelMessage(role="system", content=systemPrompt))
 
             conversationHistory.append(ModelMessage(role="user", content=userPrompt))
             self.memoryService.appendMessage(sessionId=sessionId, role="user", content=userPrompt)
@@ -216,7 +280,20 @@ class AgentLoop:
                 printQuickTip("Use 'e-cli safe-mode status' to inspect execution policy.")
 
             if not finalAnswer:
-                finalAnswer = "Reached max turns without explicit completion."
+                hint = _RECOVERY_HINTS[AgentError.MAX_TURNS]
+                finalAnswer = f"Reached max turns without explicit completion. Hint: {hint}"
             return finalAnswer
+        except TimeoutError as exc:
+            hint = _RECOVERY_HINTS[AgentError.MODEL_TIMEOUT]
+            raise RuntimeError(
+                f"[{AgentError.MODEL_TIMEOUT}] Model request timed out. {hint}"
+            ) from exc
+        except RuntimeError:
+            raise
         except Exception as exc:
-            raise RuntimeError(f"Agent loop failed: {exc}") from exc
+            # Classify unknown exceptions and surface a recovery hint.
+            errorCode = AgentError.TOOL_EXEC_ERROR
+            hint = _RECOVERY_HINTS[errorCode]
+            raise RuntimeError(
+                f"[{errorCode}] Agent loop failed: {exc}. {hint}"
+            ) from exc

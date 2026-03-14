@@ -99,3 +99,53 @@ def save_config(config: AppConfig) -> None:
     app_dir.mkdir(parents=True, exist_ok=True)
     config_path = get_config_path()
     config_path.write_text(config.model_dump_json(indent=2), encoding="utf-8")
+
+
+# Mapping from ECLI_* env-var names to the corresponding AppConfig field names.
+_ENV_VAR_FIELDS: dict[str, str] = {
+    "ECLI_PROVIDER": "provider",
+    "ECLI_MODEL": "model",
+    "ECLI_ENDPOINT": "endpoint",
+    "ECLI_SAFE_MODE": "safeMode",
+    "ECLI_APPROVAL_MODE": "approvalMode",
+    "ECLI_MAX_TURNS": "maxTurns",
+    "ECLI_TIMEOUT_SECONDS": "timeoutSeconds",
+    "ECLI_STREAMING": "streamingEnabled",
+    "ECLI_TOKEN_BUDGET": "conversationTokenBudget",
+    "ECLI_SUMMARY_BUDGET": "conversationSummaryBudget",
+    "ECLI_MEMORY_PATH": "memoryPath",
+}
+
+
+def load_config_with_env_overrides() -> AppConfig:
+    """Load config from disk then overlay any ECLI_* environment variables.
+
+    Env vars are applied after JSON load so they can always override per-run
+    without touching the persisted config file.  Type coercion is handled
+    by Pydantic – booleans accept '1'/'true'/'yes' (case-insensitive).
+    """
+
+    config = load_config()
+    overrides: dict[str, object] = {}
+    for env_key, field_name in _ENV_VAR_FIELDS.items():
+        raw = os.getenv(env_key)
+        if raw is not None:
+            overrides[field_name] = raw
+
+    if overrides:
+        # Build a merged dict then re-validate through Pydantic so type coercion
+        # and validation run exactly once.
+        merged = config.model_dump()
+        merged.update(overrides)
+        try:
+            config = AppConfig(**merged)
+        except ValidationError:
+            # If an env var contains an invalid value keep the existing config
+            # and let the caller proceed; a warning is emitted but we don't crash.
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "One or more ECLI_* env vars contain invalid values and were ignored: %s",
+                list(overrides.keys()),
+            )
+
+    return config

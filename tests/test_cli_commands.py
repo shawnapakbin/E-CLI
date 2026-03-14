@@ -37,7 +37,7 @@ from e_cli.models.discovery import DiscoveredEndpoint
 def test_models_list_no_discovery(monkeypatch) -> None:
     """Ensures list command handles empty discovery with user guidance."""
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig())
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig())
     monkeypatch.setattr("e_cli.cli.ModelDiscovery.discover", lambda: [])
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
@@ -58,7 +58,7 @@ def test_models_use_persists_selection(monkeypatch) -> None:
     """Ensures selected provider/model values are written to config."""
 
     stored: dict[str, object] = {}
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig())
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig())
     monkeypatch.setattr("e_cli.cli.save_config", lambda cfg: stored.update(cfg.model_dump()))
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
     useModel(provider="ollama", endpoint="http://127.0.0.1:11434", model="llama3")
@@ -69,7 +69,7 @@ def test_safe_mode_commands(monkeypatch) -> None:
     """Ensures safe mode status and update commands execute without errors."""
 
     cfg = AppConfig()
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda _cfg: None)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
     safeModeStatus()
@@ -80,7 +80,7 @@ def test_safe_mode_commands(monkeypatch) -> None:
 def test_ask_without_model(monkeypatch) -> None:
     """Ensures ask command exits gracefully when no model is selected."""
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig(model=""))
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig(model=""))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     ask(prompt="hello")
 
@@ -90,7 +90,7 @@ def test_ask_happy_path(monkeypatch, tmp_path: Path) -> None:
 
     cfg = AppConfig(model="m", endpoint="http://x", provider="ollama", memoryPath=str(tmp_path / "m.db"))
     saved: dict[str, object] = {}
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr("e_cli.cli.create_model_client", lambda provider, endpoint, modelParameters=None: object())
 
@@ -117,7 +117,7 @@ def test_ask_uses_explicit_session_id(monkeypatch, tmp_path: Path) -> None:
     saved: dict[str, object] = {}
     seenSessionIds: list[str] = []
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr("e_cli.cli.create_model_client", lambda provider, endpoint, modelParameters=None: object())
 
@@ -142,7 +142,7 @@ def test_ask_uses_explicit_session_id(monkeypatch, tmp_path: Path) -> None:
 def test_chat_without_model(monkeypatch) -> None:
     """Ensures interactive chat exits gracefully when no model is selected."""
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig(model=""))
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig(model=""))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
 
     chat()
@@ -157,7 +157,7 @@ def test_chat_interactive_session(monkeypatch, tmp_path: Path) -> None:
     infoLines: list[str] = []
     prompts = iter(["hello", "/session", "/exit"])
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr("e_cli.cli.create_model_client", lambda provider, endpoint, modelParameters=None: object())
     monkeypatch.setattr("e_cli.cli.uuid.uuid4", lambda: "session-fixed")
@@ -190,7 +190,7 @@ def test_chat_does_not_double_print_streamed_reply(monkeypatch, tmp_path: Path) 
     infoLines: list[str] = []
     prompts = iter(["hello", "/exit"])
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda _config: None)
     monkeypatch.setattr("e_cli.cli.create_model_client", lambda provider, endpoint, modelParameters=None: object())
     monkeypatch.setattr("builtins.input", lambda _prompt: next(prompts))
@@ -229,7 +229,7 @@ def test_list_models_with_discovery(monkeypatch) -> None:
     """Ensures list command prints a numbered menu of discovered model options."""
 
     captured: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig())
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig())
     monkeypatch.setattr(
         "e_cli.cli._collectModelOptions",
         lambda _cfg: [
@@ -247,7 +247,7 @@ def test_list_models_choose_flow(monkeypatch) -> None:
 
     cfg = AppConfig()
     saved: dict[str, object] = {}
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr(
         "e_cli.cli._collectModelOptions",
@@ -269,7 +269,7 @@ def test_model_select_with_index(monkeypatch) -> None:
 
     cfg = AppConfig()
     saved: dict[str, object] = {}
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr(
         "e_cli.cli._collectModelOptions",
@@ -288,7 +288,7 @@ def test_approval_commands(monkeypatch) -> None:
     """Ensures approval mode status and set commands update config correctly."""
 
     cfg = AppConfig()
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda _cfg: None)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
 
@@ -307,7 +307,7 @@ def test_sessions_list_command(monkeypatch) -> None:
                 SessionSummary(sessionId="s1", messageCount=2, lastCreatedAt="2026-03-10T00:00:00Z")
             ]
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig())
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig())
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: FakeMemoryService())
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
 
@@ -330,7 +330,7 @@ def test_sessions_show_uses_last_session(monkeypatch) -> None:
             ]
 
     cfg = AppConfig(lastSessionId="session-last")
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: FakeMemoryService())
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
@@ -356,7 +356,7 @@ def test_sessions_audit_uses_last_session(monkeypatch) -> None:
             return [FakeAuditEvent()]
 
     cfg = AppConfig(lastSessionId="session-last")
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: FakeMemoryService())
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
@@ -391,7 +391,7 @@ def test_sessions_show_displays_compaction_summary(monkeypatch) -> None:
 
     infoLines: list[str] = []
     cfg = AppConfig(lastSessionId="session-last")
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: FakeMemoryService())
     monkeypatch.setattr("e_cli.cli.printInfo", lambda m: infoLines.append(m))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
@@ -439,7 +439,7 @@ def test_sessions_compact_dry_run_reports_without_mutation(monkeypatch) -> None:
     infoLines: list[str] = []
     saved: list[object] = []
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.append(config))
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: fakeMemoryService)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda m: infoLines.append(m))
@@ -491,7 +491,7 @@ def test_sessions_compact_persists_audit_and_session(monkeypatch) -> None:
     infoLines: list[str] = []
     saved: dict[str, object] = {}
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: fakeMemoryService)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda m: infoLines.append(m))
@@ -510,7 +510,7 @@ def test_sessions_continue_with_explicit_session_id(monkeypatch) -> None:
     """Ensures continue command delegates to ask with explicit session id."""
 
     seenCalls: list[tuple[str, str]] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig(lastSessionId="session-last"))
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig(lastSessionId="session-last"))
     monkeypatch.setattr("e_cli.cli.ask", lambda prompt, sessionId: seenCalls.append((prompt, sessionId)))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
@@ -523,7 +523,7 @@ def test_sessions_continue_with_last_flag(monkeypatch) -> None:
     """Ensures continue command uses lastSessionId when --last is selected."""
 
     seenCalls: list[tuple[str, str]] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: AppConfig(lastSessionId="session-last"))
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: AppConfig(lastSessionId="session-last"))
     monkeypatch.setattr("e_cli.cli.ask", lambda prompt, sessionId: seenCalls.append((prompt, sessionId)))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
@@ -537,7 +537,7 @@ def test_sessions_continue_requires_target(monkeypatch) -> None:
 
     seenCalls: list[tuple[str, str]] = []
     cfg = AppConfig(lastSessionId="")
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.ask", lambda prompt, sessionId: seenCalls.append((prompt, sessionId)))
     monkeypatch.setattr("e_cli.cli.printError", lambda _m: None)
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
@@ -558,7 +558,7 @@ def test_models_test_happy_path(monkeypatch) -> None:
             assert messages[0].role == "user"
             return ModelResponse(content="OK")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.create_model_client", lambda provider, endpoint, modelParameters=None: FakeClient())
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
 
@@ -581,7 +581,7 @@ def test_doctor_reports_checks(monkeypatch, tmp_path: Path) -> None:
             _ = timeout_seconds
             return ["llama3"]
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr(
         "e_cli.cli.ModelDiscovery.discover",
         lambda: [DiscoveredEndpoint(provider="ollama", endpoint="http://127.0.0.1:11434")],
@@ -600,7 +600,7 @@ def test_tools_list_command(monkeypatch) -> None:
 
     cfg = AppConfig()
     captured: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda m: captured.append(m))
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
 
@@ -628,7 +628,7 @@ def test_tools_run_shell_success(monkeypatch, tmp_path: Path) -> None:
             _ = (toolCall, timeoutSeconds)
             return ToolResult(ok=True, output="ok")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -651,7 +651,7 @@ def test_tools_run_http_get_success(monkeypatch) -> None:
             assert toolCall.url == "https://example.com"
             return ToolResult(ok=True, output="status=200")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -674,7 +674,7 @@ def test_tools_run_browser_success(monkeypatch) -> None:
             assert toolCall.url == "https://example.com"
             return ToolResult(ok=True, output="opened")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -698,7 +698,7 @@ def test_tools_run_ssh_success(monkeypatch) -> None:
             assert toolCall.command == "uname -a"
             return ToolResult(ok=True, output="exitCode=0")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -723,7 +723,7 @@ def test_tools_run_curl_success(monkeypatch) -> None:
             assert toolCall.headers == {"Authorization": "Bearer token"}
             return ToolResult(ok=True, output="status=201")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -754,7 +754,7 @@ def test_tools_run_rag_search_success(monkeypatch) -> None:
             assert toolCall.topK == 3
             return ToolResult(ok=True, output="rag.search\nmatches=1")
 
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli._buildMemoryService", lambda _config: type("Memory", (), {"appendAuditEvent": lambda *args, **kwargs: None})())
     monkeypatch.setattr("e_cli.cli.ToolRouter", FakeRouter)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
@@ -767,7 +767,7 @@ def test_tools_run_rejects_unknown_tool(monkeypatch) -> None:
 
     cfg = AppConfig()
     errors: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.printError", lambda m: errors.append(m))
 
     runTool(tool="unknown")
@@ -779,7 +779,7 @@ def test_config_show_command(monkeypatch) -> None:
 
     cfg = AppConfig(model="llama3", endpoint="http://127.0.0.1:11434")
     captured: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.printInfo", lambda m: captured.append(m))
     monkeypatch.setattr("e_cli.cli.printQuickTip", lambda _m: None)
 
@@ -798,7 +798,7 @@ def test_config_set_updates_selected_fields(monkeypatch) -> None:
 
     cfg = AppConfig()
     saved: dict[str, object] = {}
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.save_config", lambda config: saved.update(config.model_dump()))
     monkeypatch.setattr("e_cli.cli.printInfo", lambda _m: None)
 
@@ -837,7 +837,7 @@ def test_config_set_rejects_invalid_limits(monkeypatch) -> None:
 
     cfg = AppConfig()
     errors: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.printError", lambda m: errors.append(m))
 
     setConfig(maxTurns=0)
@@ -849,7 +849,7 @@ def test_config_set_rejects_invalid_provider_option(monkeypatch) -> None:
 
     cfg = AppConfig()
     errors: list[str] = []
-    monkeypatch.setattr("e_cli.cli.load_config", lambda: cfg)
+    monkeypatch.setattr("e_cli.cli.load_config_with_env_overrides", lambda: cfg)
     monkeypatch.setattr("e_cli.cli.printError", lambda m: errors.append(m))
 
     setConfig(providerOption=["missing-separator"])
