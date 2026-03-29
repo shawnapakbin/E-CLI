@@ -9,9 +9,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-ProviderType = Literal["ollama", "lmstudio", "vllm"]
+ProviderType = Literal["ollama", "lmstudio", "vllm", "bundled"]
 ApprovalMode = Literal["interactive", "auto-approve", "deny"]
 RagCorpus = Literal["session", "workspace", "combined"]
+
 
 
 class AppConfig(BaseModel):
@@ -35,6 +36,11 @@ class AppConfig(BaseModel):
     providerOptions: dict[str, bool | int | float | str] = Field(default_factory=dict)
     ragCorpusDefault: RagCorpus = Field(default="combined")
     ragTopK: int = Field(default=5)
+    # Bundled helper config fields
+    bundledHelperEnabled: bool = Field(default=False)
+    bundledHelperProfile: str = Field(default="slim")
+    bundledHelperAutoActivate: bool = Field(default=False)
+    bundledHelperRuntimePath: str = Field(default="")
 
     def modelParameters(self) -> dict[str, bool | int | float | str]:
         """Return normalized model parameters for provider request payloads."""
@@ -114,6 +120,11 @@ _ENV_VAR_FIELDS: dict[str, str] = {
     "ECLI_TOKEN_BUDGET": "conversationTokenBudget",
     "ECLI_SUMMARY_BUDGET": "conversationSummaryBudget",
     "ECLI_MEMORY_PATH": "memoryPath",
+    # Bundled helper env overlays
+    "ECLI_BUNDLED_HELPER_ENABLED": "bundledHelperEnabled",
+    "ECLI_BUNDLED_HELPER_PROFILE": "bundledHelperProfile",
+    "ECLI_BUNDLED_HELPER_AUTO_ACTIVATE": "bundledHelperAutoActivate",
+    "ECLI_BUNDLED_HELPER_RUNTIME_PATH": "bundledHelperRuntimePath",
 }
 
 

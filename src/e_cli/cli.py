@@ -1,4 +1,3 @@
-"""CLI command surface for E-CLI operations."""
 
 from __future__ import annotations
 
@@ -23,6 +22,21 @@ from e_cli.safety.policy import SafetyPolicy
 from e_cli.tools.router import ToolRouter
 from e_cli.ui.messages import printError, printInfo, printQuickTip
 
+
+
+from e_cli.models.bundled_runtime import BundledRuntime
+from e_cli.models.bundled_assets import BundledAssetManager
+
+
+# ...existing code...
+
+
+# ...existing code...
+
+
+# ...existing code...
+
+
 app = typer.Typer(help="E-CLI terminal-native LLM agent")
 modelsApp = typer.Typer(help="Model discovery and selection commands")
 safeModeApp = typer.Typer(help="Safe mode controls")
@@ -30,12 +44,107 @@ approvalApp = typer.Typer(help="Approval mode controls")
 sessionsApp = typer.Typer(help="Session memory commands")
 toolsApp = typer.Typer(help="Tool inspection and execution commands")
 configApp = typer.Typer(help="Configuration inspection and updates")
+helperApp = typer.Typer(help="Bundled helper runtime lifecycle commands")
 app.add_typer(modelsApp, name="models")
 app.add_typer(safeModeApp, name="safe-mode")
 app.add_typer(approvalApp, name="approval")
 app.add_typer(sessionsApp, name="sessions")
 app.add_typer(toolsApp, name="tools")
 app.add_typer(configApp, name="config")
+app.add_typer(helperApp, name="helper")
+
+# Skill ecosystem CLI commands (must be after all Typer apps and CLI commands)
+from e_cli.skills.registry import SkillRegistry
+
+@toolsApp.command("skills-list")
+def skills_list() -> None:
+    """List all discovered skills and their manifest info."""
+    try:
+        reg = SkillRegistry()
+        skills = reg.discover()
+        if not skills:
+            printInfo("No skills discovered.")
+            return
+        for manifest in skills:
+            name = manifest.get("name", "(unnamed)")
+            desc = manifest.get("description", "")
+            version = manifest.get("version", "")
+            printInfo(f"{name} v{version}: {desc}")
+    except Exception as exc:
+        printError(f"Failed to list skills: {exc}")
+
+# Bundled helper runtime CLI commands
+@helperApp.command("status")
+def helper_status() -> None:
+    """Show the status of the bundled helper runtime."""
+    try:
+        runtime = BundledRuntime()
+        status = runtime.status()
+        printInfo(f"Bundled helper runtime status: {status}")
+    except Exception as exc:
+        printError(f"Failed to get helper status: {exc}")
+
+
+# Asset manager CLI commands
+@helperApp.command("download-assets")
+def helper_download_assets() -> None:
+    """Download and verify all assets for the bundled helper."""
+    try:
+        mgr = BundledAssetManager()
+        if mgr.ensure_assets():
+            printInfo("All assets downloaded and verified.")
+        else:
+            printError("Some assets failed to download or verify.")
+    except Exception as exc:
+        printError(f"Failed to download assets: {exc}")
+
+
+@helperApp.command("verify-assets")
+def helper_verify_assets() -> None:
+    """Verify checksums for all assets."""
+    try:
+        mgr = BundledAssetManager()
+        all_ok = True
+        from e_cli.models.bundled_assets import ASSET_MANIFEST
+        for asset in ASSET_MANIFEST:
+            path = mgr.asset_dir / asset["name"]
+            if not mgr.verify_checksum(path, asset["sha256"]):
+                printError(f"Checksum failed for {asset['name']}")
+                all_ok = False
+            else:
+                printInfo(f"Checksum OK for {asset['name']}")
+        if all_ok:
+            printInfo("All asset checksums OK.")
+        else:
+            printError("One or more asset checksums failed.")
+    except Exception as exc:
+        printError(f"Failed to verify assets: {exc}")
+
+
+@helperApp.command("start")
+def helper_start() -> None:
+    """Start the bundled helper runtime."""
+    try:
+        runtime = BundledRuntime()
+        if runtime.start():
+            printInfo("Bundled helper runtime started.")
+        else:
+            printError("Failed to start bundled helper runtime.")
+    except Exception as exc:
+        printError(f"Failed to start helper: {exc}")
+
+
+@helperApp.command("stop")
+def helper_stop() -> None:
+    """Stop the bundled helper runtime."""
+    try:
+        runtime = BundledRuntime()
+        if runtime.stop():
+            printInfo("Bundled helper runtime stopped.")
+        else:
+            printError("Failed to stop bundled helper runtime.")
+    except Exception as exc:
+        printError(f"Failed to stop helper: {exc}")
 
 
 @app.callback(invoke_without_command=True)

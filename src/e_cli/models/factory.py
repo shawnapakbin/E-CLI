@@ -6,9 +6,11 @@ from typing import Any
 
 from e_cli.config import ProviderType
 from e_cli.models.base import ModelClient
+
 from e_cli.models.providers.lmstudio import LMStudioClient
 from e_cli.models.providers.ollama import OllamaClient
 from e_cli.models.providers.vllm import VllmClient
+from e_cli.models.providers.bundled import BundledModelClient
 
 
 def create_model_client(
@@ -23,4 +25,6 @@ def create_model_client(
         return OllamaClient(endpoint, modelParameters=modelParameters)
     if provider == "lmstudio":
         return LMStudioClient(endpoint, api_key=api_key, modelParameters=modelParameters)
+    if provider == "bundled":
+        return BundledModelClient(endpoint, modelParameters=modelParameters)
     return VllmClient(endpoint, api_key=api_key, modelParameters=modelParameters)

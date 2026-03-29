@@ -255,13 +255,19 @@ e-cli models test
 
 If model replies are too random, lower `temperature`. If responses are cut short, increase `maxOutputTokens` (if your provider supports it).
 
-## Safety
-- Safe mode defaults to `on`
-- Trusted read-only shell commands auto-run
-- Mutating commands require approval
-- Browser (read-only page inspection) auto-allowed in safe mode
-- SSH always requires approval in safe mode
-- Curl read-like methods (GET/HEAD/OPTIONS) auto-allowed; mutating methods (POST/PUT/PATCH/DELETE) require approval
-- `rag.search` is read-only retrieval and auto-allowed in safe mode
 
 Use `e-cli tools list` to inspect the active safety policy for all tools.
+
+---
+
+## Documentation Index
+
+See the following documents in the `docs/` folder for more details:
+
+- [architecture.md](docs/architecture.md): Architecture overview
+- [safety-model.md](docs/safety-model.md): Safety policy and enforcement
+- [skill-authoring.md](docs/skill-authoring.md): Skill/plugin authoring guide
+- [bundled-runtime.md](docs/bundled-runtime.md): Bundled helper model/runtime
+- [offline-mode.md](docs/offline-mode.md): Offline/air-gapped deployment
+- [connected-mode.md](docs/connected-mode.md): Connected/cloud mode
+- [troubleshooting.md](docs/troubleshooting.md): Troubleshooting and FAQ
