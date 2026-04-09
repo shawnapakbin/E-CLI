@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "e-cli"
-version = "0.1.0"
+version = "1.0.0"
 description = "Terminal-native LLM agent with local and LAN model support"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,11 @@ dependencies = [
   "requests>=2.32.3",
   "pydantic>=2.8.2",
   "rich>=13.7.1",
-  "prompt_toolkit>=3.0.47"
+  "prompt_toolkit>=3.0.47",
+  "textual>=0.60.0",
+  "anthropic>=0.25.0",
+  "playwright>=1.44.0",
+  "psutil>=6.0.0"
 ]
 
 [project.scripts]
@@ -25,6 +29,7 @@ e-cli = "e_cli.cli:app"
 dev = [
   "pytest>=8.3.2",
   "pytest-cov>=5.0.0",
+  "pytest-asyncio>=0.23.0",
   "mypy>=1.11.1",
   "ruff>=0.6.3",
   "types-requests>=2.32.0"
@@ -33,6 +38,7 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+asyncio_mode = "auto"
 
 [tool.ruff]
 line-length = 100
