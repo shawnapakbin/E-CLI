@@ -111,3 +111,98 @@ def test_rag_search_requires_query() -> None:
     policy = SafetyPolicy(safeMode=True, trustedReadCommands=("echo",))
     decision = policy.evaluate(ToolCall(tool="rag.search", query=""))
     assert decision.allowed is False
+
+
+# ---------------------------------------------------------------------------
+# approval.py tests
+# ---------------------------------------------------------------------------
+
+from e_cli.safety.approval import requestApproval, requestApprovalWithMode
+
+
+def test_request_approval_with_mode_auto_approve(monkeypatch) -> None:
+    """auto-approve mode always returns True without prompting."""
+    monkeypatch.setattr("builtins.input", lambda _: (_ for _ in ()).throw(AssertionError("should not prompt")))
+    result = requestApprovalWithMode(ToolCall(tool="shell", command="ls"), "test", "auto-approve")
+    assert result is True
+
+
+def test_request_approval_with_mode_deny(monkeypatch) -> None:
+    """deny mode always returns False without prompting."""
+    monkeypatch.setattr("builtins.input", lambda _: (_ for _ in ()).throw(AssertionError("should not prompt")))
+    result = requestApprovalWithMode(ToolCall(tool="shell", command="ls"), "test", "deny")
+    assert result is False
+
+
+def test_request_approval_with_mode_interactive_yes(monkeypatch) -> None:
+    """interactive mode delegates to requestApproval and returns True for 'y'."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApprovalWithMode(ToolCall(tool="shell", command="ls"), "test", "interactive")
+    assert result is True
+
+
+def test_request_approval_with_mode_interactive_no(monkeypatch) -> None:
+    """interactive mode delegates to requestApproval and returns False for 'n'."""
+    monkeypatch.setattr("builtins.input", lambda _: "n")
+    result = requestApprovalWithMode(ToolCall(tool="shell", command="ls"), "test", "interactive")
+    assert result is False
+
+
+def test_request_approval_file_write_path(monkeypatch) -> None:
+    """requestApproval prints file path for file.write tool calls."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApproval(ToolCall(tool="file.write", path="out.txt", content="data"), "write test")
+    assert result is True
+
+
+def test_request_approval_file_read_path(monkeypatch) -> None:
+    """requestApproval prints file path for file.read tool calls."""
+    monkeypatch.setattr("builtins.input", lambda _: "yes")
+    result = requestApproval(ToolCall(tool="file.read", path="in.txt"), "read test")
+    assert result is True
+
+
+def test_request_approval_browser_url(monkeypatch) -> None:
+    """requestApproval prints URL for browser tool calls."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApproval(ToolCall(tool="browser", url="https://example.com"), "browser test")
+    assert result is True
+
+
+def test_request_approval_ssh_with_user(monkeypatch) -> None:
+    """requestApproval prints user@host for SSH tool calls with user."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApproval(
+        ToolCall(tool="ssh", host="server.local", command="ls", user="admin"),
+        "ssh test",
+    )
+    assert result is True
+
+
+def test_request_approval_ssh_without_user(monkeypatch) -> None:
+    """requestApproval prints host for SSH tool calls without user."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApproval(
+        ToolCall(tool="ssh", host="server.local", command="ls"),
+        "ssh test",
+    )
+    assert result is True
+
+
+def test_request_approval_curl(monkeypatch) -> None:
+    """requestApproval prints method and URL for curl tool calls."""
+    monkeypatch.setattr("builtins.input", lambda _: "y")
+    result = requestApproval(
+        ToolCall(tool="curl", url="https://api.example.com", method="POST"),
+        "curl test",
+    )
+    assert result is True
+
+
+def test_request_approval_with_mode_exception_returns_false(monkeypatch) -> None:
+    """requestApprovalWithMode returns False when an exception occurs."""
+    def raise_exc(*args, **kwargs):
+        raise RuntimeError("broken")
+    monkeypatch.setattr("e_cli.safety.approval.printInfo", raise_exc)
+    result = requestApprovalWithMode(ToolCall(tool="shell", command="ls"), "test", "auto-approve")
+    assert result is False

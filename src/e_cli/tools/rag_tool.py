@@ -1,12 +1,19 @@
-"""Lightweight RAG retrieval over session memory and workspace files."""
+"""Lightweight RAG retrieval over session memory, workspace files, and doc index."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import sqlite3
 import time
+
+# Location of the doc index manifest (same as DocIndexer uses)
+_DOC_INDEX_DIR = Path("~/.e-cli/doc_index").expanduser()
+_DOC_MANIFEST_PATH = _DOC_INDEX_DIR / "manifest.json"
+# In-memory store for doc chunks: corpus -> list[str]
+_doc_chunks: dict[str, list[str]] = {}
 
 
 @dataclass(slots=True)
@@ -33,6 +40,13 @@ class RagTool:
     _MAX_OUTPUT_CHARS = 8000
     _TEXT_SUFFIXES = {".py", ".md", ".txt"}
     _SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache", ".mypy_cache", "dist", "build"}
+
+    @staticmethod
+    def add_chunks(corpus: str, chunks: list[str]) -> None:
+        """Store text chunks under *corpus* for later retrieval via search."""
+        if corpus not in _doc_chunks:
+            _doc_chunks[corpus] = []
+        _doc_chunks[corpus].extend(chunks)
 
     @staticmethod
     def search(
@@ -63,6 +77,9 @@ class RagTool:
 
             if normalized_corpus in {"workspace", "combined"}:
                 candidates.extend(RagTool._search_workspace(query_text, workspace_root, deadline))
+
+            # Always include doc index corpora (all indexed documentation)
+            candidates.extend(RagTool._search_doc_index(query_text, deadline))
 
             if not candidates:
                 return RagResult(
@@ -232,4 +249,23 @@ class RagTool:
                 candidates.append(_Candidate(source="file", label=label, snippet=snippet, score=score))
         except Exception:
             return candidates
+        return candidates
+
+    @staticmethod
+    def _search_doc_index(query: str, deadline: float) -> list[_Candidate]:
+        """Search all in-memory doc index corpora for lexical matches."""
+
+        candidates: list[_Candidate] = []
+        for corpus, chunks in _doc_chunks.items():
+            for chunk in chunks:
+                if time.monotonic() > deadline:
+                    return candidates
+                score = RagTool._score(query=query, text=chunk)
+                if score <= 0:
+                    continue
+                snippet = RagTool._snippet(query=query, text=chunk)
+                if snippet:
+                    candidates.append(
+                        _Candidate(source="doc", label=f"corpus={corpus}", snippet=snippet, score=score)
+                    )
         return candidates

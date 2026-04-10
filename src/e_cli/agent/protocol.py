@@ -15,9 +15,11 @@ ToolName = Literal[
     "git.diff",
     "http.get",
     "browser",
+    "browser.playwright",
     "ssh",
     "curl",
     "rag.search",
+    "system",
     "done",
 ]
 
@@ -40,6 +42,10 @@ class ToolCall(BaseModel):
     corpus: str | None = Field(default=None)
     topK: int | None = Field(default=None)
     reason: str | None = Field(default=None)
+    action: str | None = Field(default=None)
+    selector: str | None = Field(default=None)
+    text: str | None = Field(default=None)
+    expression: str | None = Field(default=None)
 
 
 class ToolResult(BaseModel):

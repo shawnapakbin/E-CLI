@@ -6,16 +6,20 @@ from dataclasses import dataclass
 from enum import Enum
 import logging
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from e_cli.agent.protocol import ParsedAgentOutput, parse_tool_call
 from e_cli.config import ApprovalMode
 from e_cli.memory.service import MemoryService
 from e_cli.models.base import ModelClient, ModelMessage, ModelResponse
+from e_cli.models.factory import create_model_client
 from e_cli.safety.approval import requestApprovalWithMode
 from e_cli.safety.policy import SafetyPolicy
 from e_cli.tools.router import ToolRouter
 from e_cli.ui.messages import printInfo, printQuickTip, printWarning
+
+if TYPE_CHECKING:
+    from e_cli.config import AppConfig
 
 _log = logging.getLogger(__name__)
 
@@ -113,6 +117,66 @@ class AgentLoop:
     persona: str | None = None
     #: Optional extra tool schemas injected by loaded skills.
     extraToolSchemas: list[str] | None = None
+    #: Optional app config used for provider fallback chain resolution.
+    config: "AppConfig | None" = None
+
+    def _tryConnectProvider(self, client: ModelClient) -> bool:
+        """Probe a provider by listing its models; returns True if reachable."""
+        try:
+            client.list_models(timeout_seconds=min(self.timeoutSeconds, 5))
+            return True
+        except Exception:
+            return False
+
+    def _resolveModelClient(self) -> None:
+        """Attempt primary provider; if unreachable, walk fallbackChain in order.
+
+        Mutates ``self.modelClient`` to the first reachable provider found.
+        Raises ``RuntimeError`` if all providers in the chain are unreachable.
+        """
+        if self.config is None:
+            return  # No config supplied — skip fallback resolution.
+
+        if self._tryConnectProvider(self.modelClient):
+            return  # Primary provider is reachable.
+
+        primary_name = getattr(self.modelClient, "provider_name", "unknown")
+        _log.warning("Primary provider '%s' is unreachable; starting fallback chain.", primary_name)
+        printWarning(f"Provider '{primary_name}' is unreachable. Trying fallback chain…")
+
+        fallback_chain: list[str] = list(self.config.fallbackChain)
+        # Remove the primary provider from the chain to avoid retrying it.
+        fallback_chain = [p for p in fallback_chain if p != primary_name]
+
+        for provider_name in fallback_chain:
+            _log.warning("Trying fallback provider '%s'.", provider_name)
+            printWarning(f"Trying fallback provider '{provider_name}'…")
+            try:
+                candidate = create_model_client(
+                    provider=provider_name,  # type: ignore[arg-type]
+                    endpoint=self.config.endpoint,
+                    api_key=self.config.anthropicApiKey,
+                    modelParameters=self.config.modelParameters(),
+                    config=self.config,
+                )
+                if self._tryConnectProvider(candidate):
+                    _log.warning(
+                        "Fallback provider '%s' is reachable; switching to it.", provider_name
+                    )
+                    printWarning(f"Switched to fallback provider '{provider_name}'.")
+                    self.modelClient = candidate
+                    return
+                _log.warning("Fallback provider '%s' is also unreachable.", provider_name)
+                printWarning(f"Fallback provider '{provider_name}' is also unreachable.")
+            except Exception as exc:
+                _log.warning("Fallback provider '%s' failed to initialise: %s", provider_name, exc)
+                printWarning(f"Fallback provider '{provider_name}' failed: {exc}")
+
+        raise RuntimeError(
+            f"All providers unreachable. Primary: '{primary_name}'. "
+            f"Fallback chain tried: {fallback_chain}. "
+            "Check that at least one provider server is running."
+        )
 
     def _requestModelResponse(self, conversationHistory: list[ModelMessage]) -> ModelResponse:
         """Request one model response, preferring provider streaming when enabled."""
@@ -178,12 +242,35 @@ class AgentLoop:
         self.lastAssistantResponseStreamed = False
 
         try:
+            self._resolveModelClient()
+
             toolRouter = ToolRouter(
                 workspaceRoot=self.workspaceRoot,
                 memoryDbPath=Path(self.memoryDbPath).expanduser() if self.memoryDbPath else None,
                 ragCorpusDefault=self.ragCorpusDefault,
                 ragTopK=self.ragTopK,
             )
+
+            # Load skills and register their tools into the router.
+            try:
+                from e_cli.skills.executor import SkillExecutor
+                skillExecutor = SkillExecutor(
+                    router=toolRouter,
+                    safety_policy=self.safetyPolicy,
+                )
+                skillExecutor.load_all()
+                toolRouter.register_skill_executor(skillExecutor)
+                skill_tool_schemas = [
+                    f'{{"tool":"{t.name}","reason":"..."}}'
+                    for t in skillExecutor.registered_tools()
+                ]
+                if skill_tool_schemas:
+                    if self.extraToolSchemas is None:
+                        self.extraToolSchemas = skill_tool_schemas
+                    else:
+                        self.extraToolSchemas = list(self.extraToolSchemas) + skill_tool_schemas
+            except Exception as skillExc:
+                _log.warning("Failed to load skills: %s", skillExc)
             conversationHistory = self.memoryService.loadConversation(
                 sessionId=sessionId,
                 maxTokens=self.conversationTokenBudget,

@@ -9,3 +9,6 @@ __pycache__/
 htmlcov/
 .ecli/
 .dev-private/
+.vscode/
+.kiro/
+.hypothesis/

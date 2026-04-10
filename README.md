@@ -1,21 +1,30 @@
 # E-CLI
 
-E-CLI is a terminal-native LLM agent that runs with local or LAN-served models.
+E-CLI is a terminal-native LLM agent that runs with local, LAN-served, or cloud models.
 
 ## Features
+
 - Local + LAN model support: Ollama, LM Studio, vLLM (OpenAI-compatible)
-- Streaming model responses for supported providers
-- JSON tool-calling loop
+- Cloud model support: Anthropic Claude (claude-opus-4-5, claude-sonnet-4-5, claude-haiku-3-5)
+- Provider fallback chain: automatically tries the next provider when the primary is unreachable
+- Textual TUI with chat panel, tool-output panel, and status bar (use `--no-tui` for plain Rich output)
+- Streaming model responses for all supported providers
+- JSON tool-calling loop with multi-turn reasoning
 - Shell execution with safe mode defaults
 - File read/write tools with workspace boundary checks
-- Native `git.diff`, `http.get`, `browser`, `ssh`, `curl`, and `rag.search` tools for web inspection, retrieval, and remote execution
-- SQLite-backed persistent memory
-- Token-budgeted conversation recall with automatic summary compaction
-- Explicit `sessions compact` command to condense older session history into reusable summaries
+- Native tools: `git.diff`, `http.get`, `browser`, `ssh`, `curl`, `rag.search`, `system`, `browser.playwright`
+- MCP (Model Context Protocol) stdio server support — connect any MCP-compatible tool server
+- Playwright browser automation with interactive handoff (`browser.handoff_to_user`)
+- Cross-platform system tools: process management, logs, package install/uninstall, driver listing
+- Skills execution engine: drop skill folders into `~/.e-cli/skills/` for zero-code extensibility
+- Per-OS skill variants: skills declare `windows`/`linux`/`macos` entrypoints automatically selected at runtime
+- Documentation indexer: fetch and store docs into the RAG store for agent knowledge (`e-cli docs index`)
+- SQLite-backed persistent memory with token-budgeted recall and automatic summary compaction
 - Session audit log for approvals and tool executions
 - Configurable inference parameters: temperature, top-p, max output tokens, and provider-specific raw options
 
 ## Install
+
 If Python may not be installed yet, use the bootstrap installers.
 
 Linux/macOS:
@@ -41,7 +50,7 @@ If Python is already installed, you can run the E-CLI installer directly:
 python3 scripts/install_ecli.py
 ```
 
-Windows (PowerShell or Command Prompt):
+Windows:
 
 ```powershell
 py -3 scripts/install_ecli.py
@@ -51,12 +60,6 @@ Install with development extras:
 
 ```bash
 python3 scripts/install_ecli.py --dev
-```
-
-Windows (PowerShell or Command Prompt):
-
-```powershell
-py -3 scripts/install_ecli.py --dev
 ```
 
 What the installer does:
@@ -71,10 +74,10 @@ If you prefer manual install:
 python3 -m pip install --user .
 ```
 
-Windows (PowerShell or Command Prompt):
+After installing, run the following once to download the Chromium browser used by the Playwright browser tool:
 
-```powershell
-py -3 -m pip install --user .
+```bash
+playwright install chromium
 ```
 
 Verify:
@@ -86,20 +89,25 @@ e-cli --help
 If `e-cli` is still not found in the current shell, open a new terminal.
 
 Next steps:
-1. Ensure a model host is running (for example `http://localhost:11434` for Ollama).
+1. Ensure a model host is running (e.g. `http://localhost:11434` for Ollama) or set `ANTHROPIC_API_KEY` for Claude.
 2. Run `e-cli models list`.
 3. Select the desired model.
 4. Run `e-cli`.
 
 ## Quick Start
+
 ```bash
 e-cli doctor
 e-cli config show
 e-cli config set --provider ollama --model llama3
+e-cli config set --provider anthropic --model claude-sonnet-4-5
 e-cli models list
 e-cli models list --choose
 e-cli models test
 e-cli chat
+e-cli chat --no-tui
+e-cli ask "debug why nginx isn't starting"
+e-cli ask --no-tui "summarise this repo"
 e-cli tools list
 e-cli tools run --tool shell --command "echo hello"
 e-cli tools run --tool git.diff --path README.md
@@ -107,11 +115,12 @@ e-cli tools run --tool http.get --url "https://example.com"
 e-cli tools run --tool browser --url "https://example.com"
 e-cli tools run --tool ssh --host example.com --command "uptime"
 e-cli tools run --tool curl --url "https://api.example.com" --method GET
-e-cli tools run --tool curl --url "https://api.example.com" --method POST --header "Authorization=Bearer token" --content '{"ok":true}'
 e-cli tools run --tool rag.search --query "router execute" --corpus workspace --top-k 5
-e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512 --provider-option seed=42
-e-cli config set --rag-corpus-default combined --rag-top-k 5
-e-cli ask "debug why nginx isn't starting"
+e-cli tools run --tool system --action get_system_info
+e-cli docs index --url "https://docs.anthropic.com/en/api/getting-started"
+e-cli docs index --skill my-skill
+e-cli docs refresh
+e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512
 e-cli sessions compact --last --dry-run
 e-cli sessions compact --last
 e-cli sessions audit --last
@@ -119,150 +128,185 @@ e-cli sessions audit --last
 
 ## Configuration Guide
 
-Use `e-cli config show` to inspect the active configuration, then update one or more fields with `e-cli config set`.
+Use `e-cli config show` to inspect the active configuration, then update fields with `e-cli config set`.
 
 ### Command Syntax Quick Reference
-- Subcommands use hyphens, not concatenated words:
-	- Correct: `e-cli safe-mode status`
-	- Correct: `e-cli safe-mode set false`
-	- Incorrect: `e-cli safemode status`
-- `safe-mode` and `approval` are top-level command groups. They are not part of `config set` unless you are using flags.
+
+- Subcommands use hyphens: `e-cli safe-mode status`, not `e-cli safemode status`
 - Boolean flags under `config set` use toggle-style options:
-	- `--safe-mode` to enable
-	- `--no-safe-mode` to disable
-	- `--streaming-enabled` to enable streaming
-	- `--no-streaming-enabled` to disable streaming
+  - `--safe-mode` / `--no-safe-mode`
+  - `--streaming-enabled` / `--no-streaming-enabled`
 
 Examples:
 ```bash
 e-cli safe-mode status
 e-cli safe-mode set false
 e-cli safe-mode set true
-
 e-cli config set --no-safe-mode
 e-cli config set --safe-mode --approval-mode interactive
-
-e-cli config set --no-streaming-enabled
-e-cli config set --streaming-enabled
 ```
 
-Common mistakes and fixes:
-- `e-cli safemode disable`
-	- Use: `e-cli safe-mode set false`
-- `e-cli config set --safe-mode false`
-	- Use: `e-cli config set --no-safe-mode`
-
 ### Core Runtime Settings
-- `provider`: Model backend (`ollama`, `lmstudio`, `vllm`)
+
+- `provider`: Model backend (`ollama`, `lmstudio`, `vllm`, `bundled`, `anthropic`)
 - `model`: Active model name/id
 - `endpoint`: Provider base URL
 - `maxTurns`: Maximum reasoning/tool turns per prompt
 - `timeoutSeconds`: Timeout for model/tool calls
+- `fallbackChain`: Ordered list of providers to try when the primary is unreachable (default: `["ollama","lmstudio","bundled"]`)
 
 Example:
 ```bash
+e-cli config set --provider anthropic --model claude-sonnet-4-5
 e-cli config set --provider lmstudio --endpoint http://localhost:1234 --model ibm/granite-4-h-tiny
 ```
 
+### Anthropic Claude
+
+Set your API key via environment variable or config:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+e-cli config set --provider anthropic --model claude-sonnet-4-5
+```
+
+Available models: `claude-opus-4-5`, `claude-sonnet-4-5`, `claude-haiku-3-5`
+
+Rate-limit errors (HTTP 429/529) are automatically retried with exponential back-off (up to 4 attempts).
+
+### MCP Servers
+
+Add external MCP stdio servers to `~/.e-cli/config.json`:
+
+```json
+{
+  "mcpServers": [
+    {
+      "name": "my-server",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      "env": {}
+    }
+  ]
+}
+```
+
+Tools exposed by MCP servers are automatically registered and callable by the agent. Tools without a declared `safetyClass` default to `"mutating"` and require approval.
+
 ### Safety And Approvals
+
 - `safeMode`: Enable/disable safety policy checks
 - `approvalMode`: `interactive`, `auto-approve`, or `deny`
 
-Examples:
 ```bash
 e-cli config set --safe-mode --approval-mode interactive
 e-cli config set --no-safe-mode
-e-cli safe-mode set false
-e-cli safe-mode set true
-e-cli safe-mode status
 e-cli approval status
 ```
 
-### Inference Tuning
-- `temperature`: Sampling creativity (lower = more deterministic)
-- `topP`: Nucleus sampling cutoff
-- `maxOutputTokens`: Max generated tokens (`0` lets provider defaults apply)
+### System Tool
 
-Examples:
+The `system` tool provides cross-platform OS management:
+
+```bash
+e-cli tools run --tool system --action get_system_info
+e-cli tools run --tool system --action list_processes
+e-cli tools run --tool system --action get_logs --lines 50
+e-cli tools run --tool system --action list_packages
+e-cli tools run --tool system --action install_package --package curl
+e-cli tools run --tool system --action list_drivers   # Linux/Windows only
+```
+
+Safety classifications:
+- `read-only`: `list_processes`, `get_logs`, `get_system_info`, `list_packages`
+- `elevated` (always requires approval): `install_package`, `uninstall_package`, `kill_process`, `list_drivers`
+
+### Playwright Browser Tool
+
+The `browser.playwright` tool drives a real headless Chromium browser:
+
+```bash
+e-cli tools run --tool browser.playwright --action navigate --url "https://example.com"
+e-cli tools run --tool browser.playwright --action screenshot --path /tmp/shot.png
+e-cli tools run --tool browser.playwright --action get_text --selector "h1"
+e-cli tools run --tool browser.playwright --action evaluate --expression "document.title"
+e-cli tools run --tool browser.playwright --action handoff_to_user
+```
+
+All Playwright actions are classified as `"mutating"` and require approval when `safeMode` is enabled.
+
+### Documentation Indexer
+
+Index documentation pages into the RAG store for agent knowledge:
+
+```bash
+e-cli docs index --url "https://docs.anthropic.com/en/api/getting-started"
+e-cli docs index --url "https://playwright.dev/python/docs/intro" --corpus playwright-docs
+e-cli docs index --skill my-skill          # indexes knowledgeUrls from skill manifest
+e-cli docs refresh                         # re-indexes URLs older than 24 hours
+e-cli docs refresh --max-age 12            # re-index if older than 12 hours
+```
+
+### Skills
+
+Drop a skill folder into `~/.e-cli/skills/<name>/` with a `manifest.json`:
+
+```json
+{
+  "name": "my-skill",
+  "version": "1.0.0",
+  "description": "Does something useful",
+  "capabilities": ["example"],
+  "safetyClass": "read-only",
+  "tools": [{"name": "my.tool", "description": "A tool"}],
+  "entrypoint": "skill.Skill",
+  "osVariants": {
+    "windows": "skill_win.py",
+    "linux": "skill_linux.py",
+    "macos": "skill_mac.py"
+  },
+  "knowledgeUrls": ["https://example.com/docs"]
+}
+```
+
+See [docs/skill-authoring.md](docs/skill-authoring.md) for the full authoring guide.
+
+### Inference Tuning
+
 ```bash
 e-cli config set --temperature 0.2 --top-p 1.0
 e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512
+e-cli config set --provider-option seed=42 --provider-option num_ctx=8192
 ```
-
-### Provider-Specific Raw Options
-Use repeated `--provider-option key=value` flags for backend-specific controls.
-
-Examples:
-```bash
-e-cli config set --provider-option seed=42 --provider-option use_beam_search=true
-e-cli config set --provider-option num_ctx=8192
-```
-
-Notes:
-- Values are auto-parsed as `bool`, `int`, `float`, then `string`.
-- Provider options are merged into the existing map (not fully replaced).
 
 ### RAG Retrieval Defaults
-- `ragCorpusDefault`: Default corpus for `rag.search` (`session`, `workspace`, or `combined`)
-- `ragTopK`: Default number of ranked snippets returned by `rag.search` (1-10)
 
-Examples:
 ```bash
 e-cli config set --rag-corpus-default combined --rag-top-k 5
 e-cli tools run --tool rag.search --query "session summary"
 e-cli tools run --tool rag.search --query "ToolRouter execute" --corpus workspace --top-k 3
 ```
 
-### Memory And Context Budget
-- `memoryPath`: SQLite memory database path
-- `conversationTokenBudget`: Approximate context budget loaded from memory
-- `conversationSummaryBudget`: Budget reserved for compacted summary context
-
-Example:
-```bash
-e-cli config set --memory-path ~/.e-cli/memory.db --conversation-token-budget 3200 --conversation-summary-budget 800
-```
-
 ### Session Compaction
-Use explicit compaction when a long-running session has accumulated too much low-value raw history and you want to preserve the important context in summarized form.
 
-Examples:
 ```bash
 e-cli sessions compact --last --dry-run
-e-cli sessions compact --session-id d123488f-81ff-4c29-aa88-332ef5ce385c --keep-recent 10 --target-tokens 2400
+e-cli sessions compact --session-id <id> --keep-recent 10 --target-tokens 2400
 e-cli sessions show --last
 e-cli sessions audit --last
 ```
 
-Notes:
-- `sessions compact` rewrites stored session memory; it does not change the model's real context-window size.
-- Older raw entries are summarized and pruned, while recent entries remain available verbatim.
-- `--dry-run` previews what would be compacted before mutating the session.
-- `sessions show` surfaces persisted summary coverage after compaction.
-
-### Chat Session Behavior
-- `e-cli` (no subcommand): Starts interactive chat by default
-- `e-cli chat --last`: Resume last session id
-- In chat: `/help`, `/session`, `/new`, `/exit`
-- Tool intent steps are shown as `AI Thinking: { ... }` lines before execution
-
 ### Troubleshooting Configuration
+
 ```bash
 e-cli config show
 e-cli doctor
 e-cli models test
 ```
 
-If model replies are too random, lower `temperature`. If responses are cut short, increase `maxOutputTokens` (if your provider supports it).
-
-
-Use `e-cli tools list` to inspect the active safety policy for all tools.
-
 ---
 
 ## Documentation Index
-
-See the following documents in the `docs/` folder for more details:
 
 - [architecture.md](docs/architecture.md): Architecture overview
 - [safety-model.md](docs/safety-model.md): Safety policy and enforcement

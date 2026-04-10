@@ -53,6 +53,11 @@ app.add_typer(toolsApp, name="tools")
 app.add_typer(configApp, name="config")
 app.add_typer(helperApp, name="helper")
 
+docsApp = typer.Typer(help="Documentation indexing commands")
+docsIndexApp = typer.Typer(help="Index documentation from a URL or skill")
+app.add_typer(docsApp, name="docs")
+docsApp.add_typer(docsIndexApp, name="index")
+
 # Skill ecosystem CLI commands (must be after all Typer apps and CLI commands)
 from e_cli.skills.registry import SkillRegistry
 
@@ -339,6 +344,7 @@ def _buildAgentLoop(config: AppConfig) -> AgentLoop:
         memoryDbPath=config.memoryPath,
         ragCorpusDefault=config.ragCorpusDefault,
         ragTopK=config.ragTopK,
+        config=config,
     )
 
 
@@ -376,6 +382,7 @@ def _policySummaryRows(policy: SafetyPolicy) -> list[tuple[str, bool, str]]:
 def ask(
     prompt: str = typer.Argument(..., help="Task prompt for the agent"),
     sessionId: str = typer.Option("", "--session-id", help="Resume or set conversation session id"),
+    no_tui: bool = typer.Option(False, "--no-tui", help="Disable Textual TUI and use Rich console output"),
 ) -> None:
     """Run one full agent session for a user prompt."""
 
@@ -389,6 +396,25 @@ def ask(
 
         sessionIdText = sessionId if isinstance(sessionId, str) else ""
         effectiveSessionId = sessionIdText.strip() or config.lastSessionId or str(uuid.uuid4())
+
+        if not no_tui:
+            try:
+                from e_cli.ui.tui import ECLIApp, ECLIAppConfig
+                ecli_config = ECLIAppConfig(
+                    session_id=effectiveSessionId,
+                    provider=str(config.provider),
+                    model=config.model,
+                    agent_loop=agentLoop,
+                )
+                tui_app = ECLIApp(ecli_config=ecli_config)
+                # Pre-populate the input with the prompt and run
+                tui_app.run()
+                config.lastSessionId = effectiveSessionId
+                save_config(config)
+                return
+            except Exception:
+                pass  # Fall through to Rich output path if TUI fails
+
         finalAnswer = agentLoop.run(userPrompt=prompt, sessionId=effectiveSessionId)
         config.lastSessionId = effectiveSessionId
         save_config(config)
@@ -403,6 +429,7 @@ def ask(
 def chat(
     sessionId: str = typer.Option("", "--session-id", help="Resume or set conversation session id"),
     last: bool = typer.Option(False, "--last", help="Resume the last active session id"),
+    no_tui: bool = typer.Option(False, "--no-tui", help="Disable Textual TUI and use Rich console output"),
 ) -> None:
     """Start an interactive multi-turn chat session."""
 
@@ -415,6 +442,23 @@ def chat(
         agentLoop = _buildAgentLoop(config)
         sessionIdText = sessionId if isinstance(sessionId, str) else ""
         effectiveSessionId = sessionIdText.strip() or (config.lastSessionId if last else "") or str(uuid.uuid4())
+
+        if not no_tui:
+            try:
+                from e_cli.ui.tui import ECLIApp, ECLIAppConfig
+                ecli_config = ECLIAppConfig(
+                    session_id=effectiveSessionId,
+                    provider=str(config.provider),
+                    model=config.model,
+                    agent_loop=agentLoop,
+                )
+                tui_app = ECLIApp(ecli_config=ecli_config)
+                tui_app.run()
+                config.lastSessionId = effectiveSessionId
+                save_config(config)
+                return
+            except Exception:
+                pass  # Fall through to Rich output path if TUI fails
 
         printQuickTip("Interactive mode started. Use /help for commands.")
         printQuickTip(f"Session id: {effectiveSessionId}")
@@ -1026,6 +1070,8 @@ def setConfig(
     ragCorpusDefault: RagCorpus | None = typer.Option(None, "--rag-corpus-default", help="Default corpus for rag.search: session | workspace | combined"),
     ragTopK: int | None = typer.Option(None, "--rag-top-k", help="Default result count for rag.search (1-10)"),
     providerOption: list[str] | None = typer.Option(None, "--provider-option", help="Provider-specific option as key=value; repeatable"),
+    subAgentMaxConcurrency: int | None = typer.Option(None, "--sub-agent-max-concurrency", help="Max concurrent sub-agents (0 = hardware-derived)"),
+    subAgentContextBudget: int | None = typer.Option(None, "--sub-agent-context-budget", help="Token budget for sub-agent context injection"),
 ) -> None:
     """Update one or more persisted configuration values in a single command."""
 
@@ -1132,6 +1178,20 @@ def setConfig(
                 updatedOptions[keyText] = _parseProviderOption(rawValue.strip())
             config.providerOptions = updatedOptions
             changedFields.append("providerOptions")
+        subAgentMaxConcurrencyValue = subAgentMaxConcurrency if isinstance(subAgentMaxConcurrency, int) and not isinstance(subAgentMaxConcurrency, bool) else None
+        subAgentContextBudgetValue = subAgentContextBudget if isinstance(subAgentContextBudget, int) and not isinstance(subAgentContextBudget, bool) else None
+        if subAgentMaxConcurrencyValue is not None:
+            if subAgentMaxConcurrencyValue < 0:
+                printError("subAgentMaxConcurrency must be >= 0")
+                return
+            config.subAgentMaxConcurrency = subAgentMaxConcurrencyValue
+            changedFields.append("subAgentMaxConcurrency")
+        if subAgentContextBudgetValue is not None:
+            if subAgentContextBudgetValue < 256:
+                printError("subAgentContextBudget must be >= 256")
+                return
+            config.subAgentContextBudget = subAgentContextBudgetValue
+            changedFields.append("subAgentContextBudget")
 
         if not changedFields:
             printError("No changes specified. Provide at least one --option to update.")
@@ -1141,3 +1201,56 @@ def setConfig(
         printInfo(f"Updated config fields: {', '.join(changedFields)}")
     except Exception as exc:
         printError(str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Docs commands
+# ---------------------------------------------------------------------------
+
+@docsIndexApp.command("url")
+def docs_index_url(
+    url: str = typer.Option(..., "--url", help="URL of the documentation page to index"),
+    corpus: str = typer.Option("docs", "--corpus", help="Corpus name to store chunks under"),
+) -> None:
+    """Fetch and index a documentation URL into the RAG store."""
+    try:
+        from e_cli.docs.indexer import DocIndexer
+        indexer = DocIndexer()
+        count = indexer.index_url(url, corpus)
+        if count > 0:
+            printInfo(f"Indexed {count} chunk(s) from {url} into corpus '{corpus}'.")
+        else:
+            printError(f"No chunks stored for {url} (fetch may have failed).")
+    except Exception as exc:
+        printError(f"Failed to index URL: {exc}")
+
+
+@docsIndexApp.command("skill")
+def docs_index_skill(
+    skill_name: str = typer.Option(..., "--skill", help="Skill name whose knowledgeUrls to index"),
+) -> None:
+    """Index all knowledgeUrls from a skill's manifest.json."""
+    try:
+        from e_cli.docs.indexer import DocIndexer
+        indexer = DocIndexer()
+        count = indexer.index_skill(skill_name)
+        if count > 0:
+            printInfo(f"Indexed {count} chunk(s) for skill '{skill_name}'.")
+        else:
+            printInfo(f"No chunks indexed for skill '{skill_name}' (no knowledgeUrls or fetch errors).")
+    except Exception as exc:
+        printError(f"Failed to index skill docs: {exc}")
+
+
+@docsApp.command("refresh")
+def docs_refresh(
+    max_age: int = typer.Option(24, "--max-age", help="Re-index URLs older than this many hours"),
+) -> None:
+    """Re-index all documentation URLs whose lastIndexedAt is older than --max-age hours."""
+    try:
+        from e_cli.docs.indexer import DocIndexer
+        indexer = DocIndexer()
+        indexer.refresh_stale(max_age_hours=max_age)
+        printInfo(f"Refresh complete (max-age={max_age}h).")
+    except Exception as exc:
+        printError(f"Failed to refresh docs: {exc}")

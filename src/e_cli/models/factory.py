@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from e_cli.config import ProviderType
+from e_cli.config import AppConfig, ProviderType
 from e_cli.models.base import ModelClient
 
 from e_cli.models.providers.lmstudio import LMStudioClient
@@ -18,9 +18,16 @@ def create_model_client(
     endpoint: str,
     api_key: str = "",
     modelParameters: dict[str, Any] | None = None,
+    config: AppConfig | None = None,
 ) -> ModelClient:
     """Create provider-specific client implementation based on selected provider."""
 
+    if provider == "anthropic":
+        from e_cli.models.providers.anthropic import AnthropicClient
+        if config is None:
+            from e_cli.config import AppConfig as _AppConfig
+            config = _AppConfig()
+        return AnthropicClient(config)
     if provider == "ollama":
         return OllamaClient(endpoint, modelParameters=modelParameters)
     if provider == "lmstudio":

@@ -208,3 +208,225 @@ def test_agent_loop_generic_exception_raises_runtime_error(tmp_path: Path, monke
     import pytest as _pytest
     with _pytest.raises(RuntimeError, match="TOOL_EXEC_ERROR"):
         loop.run(userPrompt="trigger failure", sessionId="err-session")
+
+
+# ---------------------------------------------------------------------------
+# Provider fallback chain tests (Task 3.1 / 3.2)
+# ---------------------------------------------------------------------------
+
+from e_cli.config import AppConfig
+
+
+def _make_loop(tmp_path: Path, model_client, config: AppConfig | None = None) -> AgentLoop:
+    """Helper: build a minimal AgentLoop for fallback tests."""
+    schemaPath = Path(__file__).resolve().parents[1] / "src" / "e_cli" / "memory" / "schema.sql"
+    store = MemoryStore(dbPath=tmp_path / "memory.db", schemaPath=schemaPath)
+    memoryService = MemoryService(memoryStore=store)
+    policy = SafetyPolicy(safeMode=False, trustedReadCommands=())
+    return AgentLoop(
+        modelClient=model_client,
+        modelName="fake-model",
+        memoryService=memoryService,
+        safetyPolicy=policy,
+        workspaceRoot=tmp_path,
+        timeoutSeconds=5,
+        maxTurns=2,
+        approvalMode="auto-approve",
+        streamingEnabled=False,
+        conversationTokenBudget=3200,
+        conversationSummaryBudget=800,
+        config=config,
+    )
+
+
+class _ReachableClient:
+    """Fake client that is always reachable and returns a done signal."""
+
+    provider_name = "reachable"
+
+    def list_models(self, timeout_seconds: int) -> list[str]:
+        return ["fake-model"]
+
+    def chat(self, model_name: str, messages: list[ModelMessage], timeout_seconds: int) -> ModelResponse:
+        return ModelResponse(content='{"tool":"done","reason":"ok"}')
+
+
+class _UnreachableClient:
+    """Fake client that always raises a connection error."""
+
+    provider_name = "unreachable"
+
+    def list_models(self, timeout_seconds: int) -> list[str]:
+        raise ConnectionError("endpoint unreachable")
+
+    def chat(self, model_name: str, messages: list[ModelMessage], timeout_seconds: int) -> ModelResponse:
+        raise ConnectionError("endpoint unreachable")
+
+
+def test_fallback_chain_skips_unreachable_primary_and_uses_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When primary provider is unreachable, loop switches to first reachable fallback."""
+
+    config = AppConfig(
+        provider="ollama",
+        model="fake-model",
+        fallbackChain=["lmstudio", "bundled"],
+        memoryPath=str(tmp_path / "memory.db"),
+    )
+
+    primary = _UnreachableClient()
+    primary.provider_name = "ollama"
+
+    fallback = _ReachableClient()
+    fallback.provider_name = "lmstudio"
+
+    warnings: list[str] = []
+    monkeypatch.setattr("e_cli.agent.loop.printWarning", lambda msg: warnings.append(msg))
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+
+    # Patch create_model_client to return our fallback stub for lmstudio
+    def fake_create(provider, endpoint, api_key, modelParameters, config):
+        if provider == "lmstudio":
+            return fallback
+        bad = _UnreachableClient()
+        bad.provider_name = provider
+        return bad
+
+    monkeypatch.setattr("e_cli.agent.loop.create_model_client", fake_create)
+
+    loop = _make_loop(tmp_path, primary, config)
+    result = loop.run(userPrompt="hello", sessionId="fb-test")
+
+    assert result == "ok"
+    assert loop.modelClient is fallback
+    # Warning about primary being unreachable must have been logged
+    assert any("unreachable" in w.lower() or "ollama" in w.lower() for w in warnings)
+
+
+def test_fallback_chain_logs_warning_for_each_failed_provider(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A warning is logged for each provider that fails before trying the next."""
+
+    config = AppConfig(
+        provider="ollama",
+        model="fake-model",
+        fallbackChain=["lmstudio", "bundled"],
+        memoryPath=str(tmp_path / "memory.db"),
+    )
+
+    primary = _UnreachableClient()
+    primary.provider_name = "ollama"
+
+    good_client = _ReachableClient()
+    good_client.provider_name = "bundled"
+
+    call_order: list[str] = []
+
+    def fake_create(provider, endpoint, api_key, modelParameters, config):
+        call_order.append(provider)
+        if provider == "lmstudio":
+            bad = _UnreachableClient()
+            bad.provider_name = "lmstudio"
+            return bad
+        return good_client
+
+    warnings: list[str] = []
+    monkeypatch.setattr("e_cli.agent.loop.printWarning", lambda msg: warnings.append(msg))
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.create_model_client", fake_create)
+
+    loop = _make_loop(tmp_path, primary, config)
+    result = loop.run(userPrompt="hello", sessionId="fb-warn-test")
+
+    assert result == "ok"
+    # lmstudio and bundled should have been tried
+    assert "lmstudio" in call_order
+    assert "bundled" in call_order
+    # At least one warning for the failed lmstudio provider
+    assert any("lmstudio" in w for w in warnings)
+
+
+def test_fallback_chain_raises_when_all_providers_fail(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """RuntimeError is raised when primary and all fallback providers are unreachable."""
+
+    import pytest
+
+    config = AppConfig(
+        provider="ollama",
+        model="fake-model",
+        fallbackChain=["lmstudio", "bundled"],
+        memoryPath=str(tmp_path / "memory.db"),
+    )
+
+    primary = _UnreachableClient()
+    primary.provider_name = "ollama"
+
+    def fake_create(provider, endpoint, api_key, modelParameters, config):
+        bad = _UnreachableClient()
+        bad.provider_name = provider
+        return bad
+
+    monkeypatch.setattr("e_cli.agent.loop.printWarning", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.create_model_client", fake_create)
+
+    loop = _make_loop(tmp_path, primary, config)
+
+    with pytest.raises(RuntimeError, match="All providers unreachable"):
+        loop.run(userPrompt="hello", sessionId="fb-fail-test")
+
+
+def test_no_fallback_when_primary_is_reachable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """When primary provider is reachable, fallback chain is never consulted."""
+
+    config = AppConfig(
+        provider="ollama",
+        model="fake-model",
+        fallbackChain=["lmstudio", "bundled"],
+        memoryPath=str(tmp_path / "memory.db"),
+    )
+
+    primary = _ReachableClient()
+    primary.provider_name = "ollama"
+
+    create_calls: list[str] = []
+
+    def fake_create(provider, endpoint, api_key, modelParameters, config):
+        create_calls.append(provider)
+        return _ReachableClient()
+
+    monkeypatch.setattr("e_cli.agent.loop.printWarning", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.create_model_client", fake_create)
+
+    loop = _make_loop(tmp_path, primary, config)
+    result = loop.run(userPrompt="hello", sessionId="fb-noop-test")
+
+    assert result == "ok"
+    # create_model_client should NOT have been called for fallback providers
+    assert create_calls == []
+
+
+def test_no_fallback_when_config_is_none(tmp_path: Path, monkeypatch) -> None:
+    """When no config is provided, fallback resolution is skipped entirely."""
+
+    primary = _ReachableClient()
+
+    monkeypatch.setattr("e_cli.agent.loop.printWarning", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printInfo", lambda _m: None)
+    monkeypatch.setattr("e_cli.agent.loop.printQuickTip", lambda _m: None)
+
+    loop = _make_loop(tmp_path, primary, config=None)
+    result = loop.run(userPrompt="hello", sessionId="fb-noconfig-test")
+
+    assert result == "ok"

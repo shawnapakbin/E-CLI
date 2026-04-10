@@ -25,6 +25,9 @@ DEFAULT_ENDPOINTS = [
     DiscoveredEndpoint(provider="vllm", endpoint="http://127.0.0.1:8000"),
 ]
 
+# Sentinel endpoint value used for static (no-network) providers like Anthropic.
+_STATIC_ENDPOINT = "static"
+
 
 class ModelDiscovery:
     """Discovers reachable model endpoints and available models with lightweight probes."""
@@ -96,4 +99,9 @@ class ModelDiscovery:
                     reachable.append(candidate)
             except requests.RequestException:
                 continue
+
+        # Include Anthropic static endpoint when API key is available (no network call).
+        if os.getenv("ANTHROPIC_API_KEY"):
+            reachable.append(DiscoveredEndpoint(provider="anthropic", endpoint=_STATIC_ENDPOINT))
+
         return reachable

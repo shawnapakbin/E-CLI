@@ -53,6 +53,13 @@ class SafetyPolicy:
             if toolCall.tool == "browser":
                 return SafetyDecision(allowed=True, requiresApproval=False, reason="read-only browser action")
 
+            if toolCall.tool == "browser.playwright":
+                return SafetyDecision(
+                    allowed=True,
+                    requiresApproval=True,
+                    reason="mutating browser action requires approval in safe mode",
+                )
+
             if toolCall.tool == "rag.search":
                 if not (toolCall.query or "").strip():
                     return SafetyDecision(allowed=False, requiresApproval=False, reason="missing rag query")
@@ -109,6 +116,28 @@ class SafetyPolicy:
                     allowed=True,
                     requiresApproval=True,
                     reason="file write requires approval in safe mode",
+                )
+
+            if toolCall.tool == "system":
+                action = toolCall.action or ""
+                elevated_actions = {"install_package", "uninstall_package", "kill_process", "list_drivers"}
+                read_only_actions = {"list_processes", "get_logs", "get_system_info", "list_packages"}
+                if action in elevated_actions:
+                    return SafetyDecision(
+                        allowed=True,
+                        requiresApproval=True,
+                        reason="elevated system action requires approval in safe mode",
+                    )
+                if action in read_only_actions:
+                    return SafetyDecision(
+                        allowed=True,
+                        requiresApproval=False,
+                        reason="read-only system action",
+                    )
+                return SafetyDecision(
+                    allowed=True,
+                    requiresApproval=True,
+                    reason="unknown system action requires approval in safe mode",
                 )
 
             return SafetyDecision(allowed=False, requiresApproval=False, reason="unknown tool")

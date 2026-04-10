@@ -9,10 +9,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-ProviderType = Literal["ollama", "lmstudio", "vllm", "bundled"]
+ProviderType = Literal["ollama", "lmstudio", "vllm", "bundled", "anthropic"]
 ApprovalMode = Literal["interactive", "auto-approve", "deny"]
 RagCorpus = Literal["session", "workspace", "combined"]
 
+
+class MCPServerConfig(BaseModel):
+    """Configuration for a single MCP stdio server."""
+
+    name: str
+    command: str
+    args: list[str] = Field(default_factory=list)
+    env: dict[str, str] = Field(default_factory=dict)
 
 
 class AppConfig(BaseModel):
@@ -41,6 +49,15 @@ class AppConfig(BaseModel):
     bundledHelperProfile: str = Field(default="slim")
     bundledHelperAutoActivate: bool = Field(default=False)
     bundledHelperRuntimePath: str = Field(default="")
+    # Anthropic provider config
+    anthropicApiKey: str = Field(default="")
+    fallbackChain: list[str] = Field(default_factory=lambda: ["ollama", "lmstudio", "bundled"])
+    # MCP server config
+    mcpServers: list[MCPServerConfig] = Field(default_factory=list)
+    # Sub-agent config
+    subAgentMaxConcurrency: int = Field(default=0)
+    subAgentContextBudget: int = Field(default=2048)
+    subAgentDefaultTimeout: int = Field(default=120)
 
     def modelParameters(self) -> dict[str, bool | int | float | str]:
         """Return normalized model parameters for provider request payloads."""
@@ -125,6 +142,8 @@ _ENV_VAR_FIELDS: dict[str, str] = {
     "ECLI_BUNDLED_HELPER_PROFILE": "bundledHelperProfile",
     "ECLI_BUNDLED_HELPER_AUTO_ACTIVATE": "bundledHelperAutoActivate",
     "ECLI_BUNDLED_HELPER_RUNTIME_PATH": "bundledHelperRuntimePath",
+    # Sub-agent env overlays
+    "ECLI_MAX_SUB_AGENTS": "subAgentMaxConcurrency",
 }
 
 
