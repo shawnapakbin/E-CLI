@@ -132,7 +132,7 @@ def show_workflow(
 
             if verbose:
                 if step.parameters:
-                    console.print(f"     [dim]Parameters:[/dim]")
+                    console.print("     [dim]Parameters:[/dim]")
                     for key, value in step.parameters.items():
                         console.print(f"       - {key}: {value}")
 
@@ -195,7 +195,7 @@ def run_workflow(
             console.print("[bold]Parameters:[/bold]")
             for key, value in parameters.items():
                 console.print(f"  {key} = {value}")
-            console.print(f"\n[bold]Steps to execute:[/bold]")
+            console.print("\n[bold]Steps to execute:[/bold]")
             for i, step in enumerate(workflow.steps, 1):
                 status = "[green]✓[/green]"
                 if step.condition:
@@ -272,7 +272,7 @@ def create_workflow(
 
         workflow_file = workflows_dir / f"{name}.yaml"
         printSuccess(f"Created workflow: {workflow_file}")
-        printInfo(f"Edit the file to add steps and customize parameters")
+        printInfo("Edit the file to add steps and customize parameters")
 
     except Exception as e:
         printError(f"Failed to create workflow: {e}")

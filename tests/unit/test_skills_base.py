@@ -1,6 +1,5 @@
 """Unit tests for skills base module."""
 
-import pytest
 from dataclasses import dataclass
 from typing import Any
 

@@ -1,7 +1,6 @@
 """Integration tests for RAG search with wiki."""
 
 import pytest
-from pathlib import Path
 from e_cli.wiki.manager import WikiManager
 from e_cli.tools.rag_tool import RagTool
 

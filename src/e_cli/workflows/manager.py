@@ -172,7 +172,6 @@ class WorkflowExecutor:
         Returns:
             Text with substituted values
         """
-        import re
 
         result = text
 

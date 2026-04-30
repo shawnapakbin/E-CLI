@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterator
 
-from e_cli.models.base import ModelClient, ModelMessage, ModelResponse
+from e_cli.models.base import ModelMessage, ModelResponse
 
 
 @dataclass

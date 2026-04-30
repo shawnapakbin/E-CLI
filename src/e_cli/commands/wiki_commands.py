@@ -1,7 +1,6 @@
 """Wiki management CLI commands."""
 
 import typer
-from pathlib import Path
 
 from e_cli.wiki.manager import WikiManager
 from e_cli.wiki.search import WikiSearch

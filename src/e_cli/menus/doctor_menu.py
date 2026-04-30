@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from e_cli.ui.menu import Menu, MenuItem
+from e_cli.ui.menu import Menu
 from e_cli.ui.components import (
     show_success,
     show_error,
@@ -267,7 +267,7 @@ def check_memory_database() -> None:
             schema_path = Path(__file__).resolve().parent.parent / "memory" / "schema.sql"
 
             def check_db():
-                store = MemoryStore(dbPath=memory_path, schemaPath=schema_path)
+                MemoryStore(dbPath=memory_path, schemaPath=schema_path)
                 return True
 
             show_progress_spinner("Connecting to database...", check_db)
@@ -336,7 +336,7 @@ def run_detailed_diagnostics() -> None:
     try:
         from e_cli.config import load_config
         config = load_config()
-        show_success(f"  ✓ Configuration loaded")
+        show_success("  ✓ Configuration loaded")
         show_info(f"    Provider: {config.provider}")
         show_info(f"    Endpoint: {config.endpoint}")
         show_info(f"    Model: {config.model or '(not set)'}")
