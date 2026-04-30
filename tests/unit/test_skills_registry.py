@@ -1,12 +1,10 @@
 """Unit tests for skills registry."""
 
-import pytest
-from pathlib import Path
 from dataclasses import dataclass
 from typing import Any
 
 from e_cli.skills.base import BaseSkill, SkillMetadata, SkillResult
-from e_cli.skills.registry import SkillRegistry, RegisteredSkill
+from e_cli.skills.registry import SkillRegistry
 
 
 @dataclass

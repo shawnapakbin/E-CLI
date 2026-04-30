@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from typing import Type
 
 from e_cli.skills.base import Skill, SkillManifest, SkillMetadata
 from e_cli.skills.registry import SkillRegistry, RegisteredSkill

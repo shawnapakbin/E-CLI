@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from e_cli.config import get_app_dir
-from e_cli.skills.base import Skill, SkillResult
+from e_cli.skills.base import SkillResult
 from e_cli.skills.loader import SkillLoader
 from e_cli.skills.registry import RegisteredSkill, SkillRegistry
 

@@ -1,7 +1,5 @@
 """Unit tests for wiki page module."""
 
-import pytest
-from pathlib import Path
 from e_cli.wiki.page import WikiPage, WikiLink
 
 

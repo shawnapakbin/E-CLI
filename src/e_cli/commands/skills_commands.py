@@ -3,7 +3,6 @@
 import typer
 from pathlib import Path
 
-from e_cli.config import get_app_dir
 from e_cli.skills.manager import get_skill_manager
 from e_cli.ui.messages import printInfo, printError
 from e_cli.ui.components import show_table, show_success, show_key_value_pairs

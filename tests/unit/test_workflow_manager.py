@@ -1,7 +1,5 @@
 """Unit tests for workflow manager."""
 
-import pytest
-from pathlib import Path
 
 from e_cli.workflows.manager import Workflow, WorkflowStep, WorkflowManager, WorkflowExecutor
 

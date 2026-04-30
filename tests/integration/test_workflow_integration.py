@@ -1,11 +1,9 @@
 """Integration tests for workflow execution with tools."""
 
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
 
 from e_cli.workflows.manager import Workflow, WorkflowStep, WorkflowExecutor
-from e_cli.agent.protocol import ToolCall, ToolResult
+from e_cli.agent.protocol import ToolResult
 
 
 class TestWorkflowToolIntegration:
