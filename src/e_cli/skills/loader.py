@@ -118,10 +118,10 @@ class SkillLoader:
             # Look for a class that implements Skill protocol
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
-                if isinstance(attr, type) and issubclass(attr, Skill):
+                if isinstance(attr, type) and issubclass(attr, Skill):  # type: ignore[misc]
                     # Found a Skill class, instantiate it
                     if hasattr(attr, "__init__"):
-                        return attr(skill_path=skill_path)
+                        return attr(skill_path=skill_path)  # type: ignore[call-arg]
                     return attr()
 
             return None

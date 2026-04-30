@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from e_cli.memory.store import AuditEvent, MemoryEntry, MemoryStore, SessionSummary
+from e_cli.memory.store import AuditEvent, ConversationSummary, MemoryEntry, MemoryStore, SessionSummary
 from e_cli.models.base import ModelMessage
 
 
@@ -71,7 +71,7 @@ class MemoryService:
             sections.append(MemoryService._buildSummary(compactedEntries))
         return "\n\n".join(section for section in sections if section).strip()
 
-    def getConversationSummary(self, sessionId: str):
+    def getConversationSummary(self, sessionId: str) -> ConversationSummary | None:
         """Expose the persisted session summary for CLI inspection flows."""
 
         try:

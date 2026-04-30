@@ -65,66 +65,65 @@ class PersonalityTracker:
 
     def _ensure_tables(self) -> None:
         """Ensure personality tracking tables exist."""
-        conn = self.memory_store.conn
+        with self.memory_store._connectionScope() as conn:
+            # User profiles table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT UNIQUE NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
 
-        # User profiles table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_profiles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            # Personality traits table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS personality_traits (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    trait_name TEXT NOT NULL,
+                    trait_value REAL NOT NULL,
+                    confidence REAL DEFAULT 0.5,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, trait_name)
+                )
+            """)
+
+            # User preferences table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    preference_key TEXT NOT NULL,
+                    preference_value TEXT NOT NULL,
+                    frequency INTEGER DEFAULT 1,
+                    last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, category, preference_key)
+                )
+            """)
+
+            # Domain expertise table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS domain_expertise (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    domain TEXT NOT NULL,
+                    expertise_level REAL DEFAULT 0.5,
+                    evidence_count INTEGER DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, domain)
+                )
+            """)
+
+            conn.commit()
+
+            # Ensure user profile exists
+            conn.execute(
+                "INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)",
+                (self.user_id,),
             )
-        """)
-
-        # Personality traits table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS personality_traits (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                trait_name TEXT NOT NULL,
-                trait_value REAL NOT NULL,
-                confidence REAL DEFAULT 0.5,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, trait_name)
-            )
-        """)
-
-        # User preferences table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_preferences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                category TEXT NOT NULL,
-                preference_key TEXT NOT NULL,
-                preference_value TEXT NOT NULL,
-                frequency INTEGER DEFAULT 1,
-                last_used TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, category, preference_key)
-            )
-        """)
-
-        # Domain expertise table
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS domain_expertise (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                domain TEXT NOT NULL,
-                expertise_level REAL DEFAULT 0.5,
-                evidence_count INTEGER DEFAULT 0,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(user_id, domain)
-            )
-        """)
-
-        conn.commit()
-
-        # Ensure user profile exists
-        conn.execute(
-            "INSERT OR IGNORE INTO user_profiles (user_id) VALUES (?)",
-            (self.user_id,),
-        )
-        conn.commit()
+            conn.commit()
 
     def get_personality_traits(self) -> PersonalityTraits:
         """Get current personality traits for user.
@@ -132,19 +131,19 @@ class PersonalityTracker:
         Returns:
             PersonalityTraits instance
         """
-        conn = self.memory_store.conn
-        cursor = conn.execute(
-            """
-            SELECT trait_name, trait_value
-            FROM personality_traits
-            WHERE user_id = ?
-            """,
-            (self.user_id,),
-        )
+        with self.memory_store._connectionScope() as conn:
+            cursor = conn.execute(
+                """
+                SELECT trait_name, trait_value
+                FROM personality_traits
+                WHERE user_id = ?
+                """,
+                (self.user_id,),
+            )
 
-        traits_dict = {}
-        for row in cursor:
-            traits_dict[row[0]] = row[1]
+            traits_dict = {}
+            for row in cursor:
+                traits_dict[row[0]] = row[1]
 
         return PersonalityTraits.from_dict(traits_dict)
 
@@ -156,20 +155,20 @@ class PersonalityTracker:
             value: New value (0.0 to 1.0)
             confidence: Confidence in this value (0.0 to 1.0)
         """
-        conn = self.memory_store.conn
-        conn.execute(
-            """
-            INSERT INTO personality_traits (user_id, trait_name, trait_value, confidence, updated_at)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id, trait_name)
-            DO UPDATE SET
-                trait_value = excluded.trait_value,
-                confidence = excluded.confidence,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (self.user_id, trait_name, value, confidence),
-        )
-        conn.commit()
+        with self.memory_store._connectionScope() as conn:
+            conn.execute(
+                """
+                INSERT INTO personality_traits (user_id, trait_name, trait_value, confidence, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, trait_name)
+                DO UPDATE SET
+                    trait_value = excluded.trait_value,
+                    confidence = excluded.confidence,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (self.user_id, trait_name, value, confidence),
+            )
+            conn.commit()
 
     def record_preference(self, category: str, key: str, value: str) -> None:
         """Record or update a user preference.
@@ -179,20 +178,20 @@ class PersonalityTracker:
             key: Preference key
             value: Preference value
         """
-        conn = self.memory_store.conn
-        conn.execute(
-            """
-            INSERT INTO user_preferences (user_id, category, preference_key, preference_value, frequency, last_used)
-            VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id, category, preference_key)
-            DO UPDATE SET
-                preference_value = excluded.preference_value,
-                frequency = frequency + 1,
-                last_used = CURRENT_TIMESTAMP
-            """,
-            (self.user_id, category, key, value),
-        )
-        conn.commit()
+        with self.memory_store._connectionScope() as conn:
+            conn.execute(
+                """
+                INSERT INTO user_preferences (user_id, category, preference_key, preference_value, frequency, last_used)
+                VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, category, preference_key)
+                DO UPDATE SET
+                    preference_value = excluded.preference_value,
+                    frequency = frequency + 1,
+                    last_used = CURRENT_TIMESTAMP
+                """,
+                (self.user_id, category, key, value),
+            )
+            conn.commit()
 
     def get_preferences(self, category: str | None = None) -> list[UserPreference]:
         """Get user preferences.
@@ -203,33 +202,32 @@ class PersonalityTracker:
         Returns:
             List of UserPreference objects
         """
-        conn = self.memory_store.conn
+        with self.memory_store._connectionScope() as conn:
+            if category:
+                cursor = conn.execute(
+                    """
+                    SELECT category, preference_key, preference_value, frequency
+                    FROM user_preferences
+                    WHERE user_id = ? AND category = ?
+                    ORDER BY frequency DESC
+                    """,
+                    (self.user_id, category),
+                )
+            else:
+                cursor = conn.execute(
+                    """
+                    SELECT category, preference_key, preference_value, frequency
+                    FROM user_preferences
+                    WHERE user_id = ?
+                    ORDER BY frequency DESC
+                    """,
+                    (self.user_id,),
+                )
 
-        if category:
-            cursor = conn.execute(
-                """
-                SELECT category, preference_key, preference_value, frequency
-                FROM user_preferences
-                WHERE user_id = ? AND category = ?
-                ORDER BY frequency DESC
-                """,
-                (self.user_id, category),
-            )
-        else:
-            cursor = conn.execute(
-                """
-                SELECT category, preference_key, preference_value, frequency
-                FROM user_preferences
-                WHERE user_id = ?
-                ORDER BY frequency DESC
-                """,
-                (self.user_id,),
-            )
-
-        return [
-            UserPreference(category=row[0], key=row[1], value=row[2], frequency=row[3])
-            for row in cursor
-        ]
+            return [
+                UserPreference(category=row[0], key=row[1], value=row[2], frequency=row[3])
+                for row in cursor
+            ]
 
     def update_domain_expertise(self, domain: str, level: float) -> None:
         """Update expertise level in a domain.
@@ -238,20 +236,20 @@ class PersonalityTracker:
             domain: Domain name (e.g., 'python', 'linux', 'docker')
             level: Expertise level (0.0 to 1.0)
         """
-        conn = self.memory_store.conn
-        conn.execute(
-            """
-            INSERT INTO domain_expertise (user_id, domain, expertise_level, evidence_count, updated_at)
-            VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id, domain)
-            DO UPDATE SET
-                expertise_level = excluded.expertise_level,
-                evidence_count = evidence_count + 1,
-                updated_at = CURRENT_TIMESTAMP
-            """,
-            (self.user_id, domain, level),
-        )
-        conn.commit()
+        with self.memory_store._connectionScope() as conn:
+            conn.execute(
+                """
+                INSERT INTO domain_expertise (user_id, domain, expertise_level, evidence_count, updated_at)
+                VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, domain)
+                DO UPDATE SET
+                    expertise_level = excluded.expertise_level,
+                    evidence_count = evidence_count + 1,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (self.user_id, domain, level),
+            )
+            conn.commit()
 
     def get_top_domains(self, limit: int = 5) -> list[tuple[str, float]]:
         """Get top domains by expertise level.
@@ -262,19 +260,19 @@ class PersonalityTracker:
         Returns:
             List of (domain, expertise_level) tuples
         """
-        conn = self.memory_store.conn
-        cursor = conn.execute(
-            """
-            SELECT domain, expertise_level
-            FROM domain_expertise
-            WHERE user_id = ?
-            ORDER BY expertise_level DESC, evidence_count DESC
-            LIMIT ?
-            """,
-            (self.user_id, limit),
-        )
+        with self.memory_store._connectionScope() as conn:
+            cursor = conn.execute(
+                """
+                SELECT domain, expertise_level
+                FROM domain_expertise
+                WHERE user_id = ?
+                ORDER BY expertise_level DESC, evidence_count DESC
+                LIMIT ?
+                """,
+                (self.user_id, limit),
+            )
 
-        return [(row[0], row[1]) for row in cursor]
+            return [(row[0], row[1]) for row in cursor]
 
     def generate_adaptive_prompt(self, base_prompt: str) -> str:
         """Generate an adaptive system prompt based on user personality.

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from e_cli.wiki.page import WikiPage
 
@@ -91,7 +91,7 @@ class WikiIndexer:
 
         try:
             with open(self.index_file) as f:
-                return json.load(f)
+                return cast(dict[str, Any], json.load(f))
         except Exception:
             return self.build_index()
 

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
 
 
 @dataclass
@@ -39,7 +42,7 @@ class WikiEmbeddings:
             model_name: Name of the sentence transformer model to use
         """
         self.model_name = model_name
-        self._model = None
+        self._model: SentenceTransformer | None = None
         self._index = None
 
     def _ensure_model_loaded(self) -> None:
@@ -67,6 +70,7 @@ class WikiEmbeddings:
             EmbeddingResult with vector and metadata
         """
         self._ensure_model_loaded()
+        assert self._model is not None
 
         # Generate embedding
         embedding = self._model.encode(text, convert_to_numpy=True)
@@ -117,7 +121,7 @@ class WikiEmbeddings:
         self._ensure_model_loaded()
 
         try:
-            import numpy as np
+            import numpy as np  # type: ignore[import-not-found]
         except ImportError:
             raise ImportError(
                 "numpy not installed. Install with: pip install numpy"

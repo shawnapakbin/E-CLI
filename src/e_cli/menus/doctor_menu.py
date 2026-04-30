@@ -183,17 +183,16 @@ def test_model_connections() -> None:
 
         show_info(f"Testing {config.provider} at {config.endpoint}...")
 
-        def test_connection():
+        def test_connection() -> list[str]:
             client = create_model_client(
                 provider=config.provider,
                 endpoint=config.endpoint,
                 modelParameters=config.modelParameters(),
             )
             # Try to list models as a connectivity test
-            models = client.list_models(timeout_seconds=config.timeoutSeconds)
-            return models
+            return client.list_models(timeout_seconds=config.timeoutSeconds)
 
-        models = show_progress_spinner("Connecting to provider...", test_connection)
+        models: list[str] = show_progress_spinner("Connecting to provider...", test_connection)
 
         show_success(f"Connected to {config.provider}")
         show_info(f"Available models: {len(models)}")
@@ -266,7 +265,7 @@ def check_memory_database() -> None:
             from e_cli.memory.store import MemoryStore
             schema_path = Path(__file__).resolve().parent.parent / "memory" / "schema.sql"
 
-            def check_db():
+            def check_db() -> bool:
                 MemoryStore(dbPath=memory_path, schemaPath=schema_path)
                 return True
 

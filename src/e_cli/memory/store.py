@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Generator
 import sqlite3
 
 
@@ -76,7 +77,7 @@ class MemoryStore:
             raise RuntimeError(f"Failed to connect memory database: {exc}") from exc
 
     @contextmanager
-    def _connectionScope(self) -> sqlite3.Connection:
+    def _connectionScope(self) -> Generator[sqlite3.Connection, None, None]:
         """Yield one sqlite connection and always close it after use."""
 
         connection = self._connect()

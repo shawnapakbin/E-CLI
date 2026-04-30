@@ -15,7 +15,7 @@ from e_cli.agent.protocol import ToolCall
 from e_cli.config import ApprovalMode, AppConfig, ProviderType, RagCorpus, get_app_dir, load_config, save_config
 from e_cli.memory.service import MemoryService
 from e_cli.memory.store import MemoryStore
-from e_cli.models.base import ModelMessage
+from e_cli.models.base import ModelClient, ModelMessage
 from e_cli.models.discovery import DiscoveredEndpoint, ModelDiscovery
 from e_cli.models.factory import create_model_client
 from e_cli.safety.approval import requestApprovalWithMode
@@ -32,23 +32,29 @@ toolsApp = typer.Typer(help="Tool inspection and execution commands")
 configApp = typer.Typer(help="Configuration inspection and updates")
 
 # Import new command modules
+skillsApp: typer.Typer | None = None
 try:
-    from e_cli.commands.skills_commands import app as skillsApp
-    app.add_typer(skillsApp, name="skills")
+    from e_cli.commands.skills_commands import app as _skillsAppLoaded
+    app.add_typer(_skillsAppLoaded, name="skills")
+    skillsApp = _skillsAppLoaded
 except ImportError:
-    skillsApp = None
+    pass
 
+wikiApp: typer.Typer | None = None
 try:
-    from e_cli.commands.wiki_commands import app as wikiApp
-    app.add_typer(wikiApp, name="wiki")
+    from e_cli.commands.wiki_commands import app as _wikiAppLoaded
+    app.add_typer(_wikiAppLoaded, name="wiki")
+    wikiApp = _wikiAppLoaded
 except ImportError:
-    wikiApp = None
+    pass
 
+workflowApp: typer.Typer | None = None
 try:
-    from e_cli.commands.workflow_commands import app as workflowApp
-    app.add_typer(workflowApp, name="workflow")
+    from e_cli.commands.workflow_commands import app as _workflowAppLoaded
+    app.add_typer(_workflowAppLoaded, name="workflow")
+    workflowApp = _workflowAppLoaded
 except ImportError:
-    workflowApp = None
+    pass
 
 app.add_typer(modelsApp, name="models")
 app.add_typer(safeModeApp, name="safe-mode")
@@ -138,7 +144,7 @@ def _buildMemoryService(config: AppConfig) -> MemoryService:
         raise RuntimeError(f"Failed to create memory service: {exc}") from exc
 
 
-def _createConfiguredModelClient(config: AppConfig, provider: ProviderType, endpoint: str):
+def _createConfiguredModelClient(config: AppConfig, provider: ProviderType, endpoint: str) -> ModelClient:
     """Create a model client using persisted inference parameters."""
 
     return create_model_client(
@@ -844,7 +850,7 @@ def runTool(
             parsedHeaders[keyText] = value.strip()
 
         toolCall = ToolCall(
-            tool=normalizedTool,
+            tool=normalizedTool,  # type: ignore[arg-type]
             command=command or None,
             path=path or None,
             url=url or None,

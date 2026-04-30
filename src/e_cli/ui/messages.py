@@ -88,6 +88,15 @@ def printError(messageText: str) -> None:
         raise RuntimeError(f"Failed in printError: {exc}") from exc
 
 
+def printSuccess(messageText: str) -> None:
+    """Compatibility wrapper for success message output."""
+
+    try:
+        console.print(f"[green]{messageText}[/green]")
+    except Exception as exc:
+        raise RuntimeError(f"Failed in printSuccess: {exc}") from exc
+
+
 def printStream(messageText: str) -> None:
     """Compatibility wrapper for streaming output fragments."""
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from rich.console import Console
 from rich.panel import Panel
@@ -148,7 +148,7 @@ class MenuRenderer:
                 raise
 
 
-def create_simple_menu(title: str, options: list[tuple[str, str, Callable]]) -> Menu:
+def create_simple_menu(title: str, options: list[tuple[str, str, Callable[..., Any]]]) -> Menu:
     """Helper to create a simple menu from a list of options.
 
     Args:

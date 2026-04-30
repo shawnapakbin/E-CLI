@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
@@ -85,10 +85,10 @@ def prompt_choice(question: str, choices: list[str], default: str | None = None)
     Returns:
         User's selected choice
     """
-    return Prompt.ask(question, choices=choices, default=default)
+    return Prompt.ask(question, choices=choices, default=default or "")
 
 
-def show_progress_spinner(description: str, task: Callable[[], any]) -> any:
+def show_progress_spinner(description: str, task: Callable[[], Any]) -> Any:
     """Execute a task while showing a progress spinner.
 
     Args:
@@ -108,7 +108,7 @@ def show_progress_spinner(description: str, task: Callable[[], any]) -> any:
     return result
 
 
-def show_progress_bar(description: str, total: int, task: Callable[[Callable[[int], None]], any]) -> any:
+def show_progress_bar(description: str, total: int, task: Callable[[Callable[[int], None]], Any]) -> Any:
     """Execute a task while showing a progress bar.
 
     Args:
