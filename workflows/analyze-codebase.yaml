@@ -1,0 +1,62 @@
+name: analyze-codebase
+version: 1.0.0
+description: Analyze a codebase and generate a report
+author: e-cli-builtin
+tags:
+  - analysis
+  - code
+  - report
+
+parameters:
+  - name: directory
+    type: string
+    required: true
+    description: Directory to analyze
+  - name: output_file
+    type: string
+    default: analysis.md
+    description: Output file for report
+
+steps:
+  - name: Count Python files
+    tool: shell
+    parameters:
+      command: find ${directory} -name "*.py" | wc -l
+
+  - name: Count lines of code
+    tool: shell
+    parameters:
+      command: find ${directory} -name "*.py" | xargs wc -l
+
+  - name: List dependencies
+    tool: shell
+    parameters:
+      command: grep -r "^import\|^from" ${directory} --include="*.py" | sort -u
+
+  - name: Find TODO comments
+    tool: shell
+    parameters:
+      command: grep -rn "TODO\|FIXME\|XXX" ${directory} --include="*.py"
+
+  - name: Generate report
+    tool: file.write
+    parameters:
+      path: ${output_file}
+      content: |
+        # Codebase Analysis Report
+
+        **Directory:** ${directory}
+        **Generated:** $(date)
+
+        ## Overview
+
+        - Python files: [output from step 1]
+        - Total lines: [output from step 2]
+
+        ## Dependencies
+
+        [output from step 3]
+
+        ## TODOs
+
+        [output from step 4]

@@ -9,9 +9,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-ProviderType = Literal["ollama", "lmstudio", "vllm"]
+ProviderType = Literal["ollama", "lmstudio", "vllm", "openai", "anthropic", "google"]
 ApprovalMode = Literal["interactive", "auto-approve", "deny"]
 RagCorpus = Literal["session", "workspace", "combined"]
+MenuStyle = Literal["minimal", "standard", "rich"]
 
 
 class AppConfig(BaseModel):
@@ -35,6 +36,10 @@ class AppConfig(BaseModel):
     providerOptions: dict[str, bool | int | float | str] = Field(default_factory=dict)
     ragCorpusDefault: RagCorpus = Field(default="combined")
     ragTopK: int = Field(default=5)
+    interactiveMenus: bool = Field(default=True)
+    menuStyle: MenuStyle = Field(default="standard")
+    menuTimeout: int = Field(default=300)
+    showShortcuts: bool = Field(default=True)
 
     def modelParameters(self) -> dict[str, bool | int | float | str]:
         """Return normalized model parameters for provider request payloads."""

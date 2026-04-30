@@ -1,0 +1,93 @@
+name: setup-python-project
+version: 1.0.0
+description: Initialize a new Python project with best practices
+author: e-cli-builtin
+tags:
+  - python
+  - setup
+  - project
+
+parameters:
+  - name: project_name
+    type: string
+    required: true
+    description: Name of the project
+  - name: include_tests
+    type: boolean
+    default: true
+    description: Include test directory
+  - name: license
+    type: string
+    default: MIT
+    choices: [MIT, Apache-2.0, GPL-3.0, Proprietary]
+    description: License type
+
+steps:
+  - name: Create directory structure
+    tool: shell
+    parameters:
+      command: mkdir -p ${project_name}/{src,tests,docs}
+
+  - name: Initialize git repository
+    tool: shell
+    parameters:
+      command: cd ${project_name} && git init
+
+  - name: Create pyproject.toml
+    tool: file.write
+    parameters:
+      path: ${project_name}/pyproject.toml
+      content: |
+        [build-system]
+        requires = ["hatchling"]
+        build-backend = "hatchling.build"
+
+        [project]
+        name = "${project_name}"
+        version = "0.1.0"
+        description = "A Python project"
+        requires-python = ">=3.11"
+
+  - name: Create README
+    tool: file.write
+    parameters:
+      path: ${project_name}/README.md
+      content: |
+        # ${project_name}
+
+        ## Installation
+
+        ```bash
+        pip install -e .
+        ```
+
+        ## Usage
+
+        ```python
+        import ${project_name}
+        ```
+
+  - name: Create .gitignore
+    tool: file.write
+    parameters:
+      path: ${project_name}/.gitignore
+      content: |
+        __pycache__/
+        *.py[cod]
+        *$py.class
+        *.so
+        .Python
+        build/
+        develop-eggs/
+        dist/
+        eggs/
+        .eggs/
+        *.egg-info/
+        .venv/
+        venv/
+
+  - name: Setup tests
+    tool: shell
+    parameters:
+      command: cd ${project_name} && echo "import pytest" > tests/test_example.py
+    condition: ${include_tests}

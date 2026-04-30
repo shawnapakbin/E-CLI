@@ -1,0 +1,30 @@
+name: git-helper
+version: 1.0.0
+description: Git repository helper utilities for common operations
+author: E-CLI Team
+category: development
+tags:
+  - git
+  - vcs
+  - development
+  - scm
+parameters:
+  - name: operation
+    type: string
+    required: true
+    description: Git operation to perform
+    choices:
+      - status
+      - log
+      - diff
+      - branch
+      - remote
+  - name: branch
+    type: string
+    required: false
+    description: Optional branch name for log/diff operations
+  - name: limit
+    type: integer
+    required: false
+    default: 10
+    description: Number of log entries to show

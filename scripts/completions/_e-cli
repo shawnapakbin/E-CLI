@@ -1,0 +1,226 @@
+#compdef e-cli
+# Zsh completion script for e-cli
+# Install: Copy to a directory in your $fpath (e.g., /usr/local/share/zsh/site-functions/)
+
+_e_cli() {
+    local -a commands models_cmds safe_mode_cmds approval_cmds sessions_cmds tools_cmds config_cmds skills_cmds wiki_cmds workflow_cmds
+    local -a providers approval_modes
+
+    commands=(
+        'chat:Start interactive chat session'
+        'doctor:Run diagnostics and health checks'
+        'models:Model discovery and selection'
+        'safe-mode:Safe mode controls'
+        'approval:Approval mode controls'
+        'sessions:Session memory commands'
+        'tools:Tool inspection and execution'
+        'config:Configuration management'
+        'skills:Skills and plugins management'
+        'wiki:Knowledge wiki management'
+        'workflow:Workflow and macro management'
+    )
+
+    models_cmds=(
+        'list:List available models'
+        'test:Test model connection'
+        'choose:Choose a model interactively'
+    )
+
+    safe_mode_cmds=(
+        'on:Enable safe mode'
+        'off:Disable safe mode'
+        'status:Show safe mode status'
+    )
+
+    approval_cmds=(
+        'set:Set approval mode'
+        'show:Show current approval mode'
+    )
+
+    sessions_cmds=(
+        'list:List all sessions'
+        'show:Show session details'
+        'delete:Delete a session'
+        'compact:Compact session memory'
+        'audit:View session audit log'
+        'stats:Show session statistics'
+    )
+
+    tools_cmds=(
+        'list:List available tools'
+        'run:Run a tool'
+    )
+
+    config_cmds=(
+        'show:Show current configuration'
+        'set:Set configuration values'
+        'reset:Reset configuration to defaults'
+    )
+
+    skills_cmds=(
+        'list:List all skills'
+        'info:Show skill information'
+        'enable:Enable a skill'
+        'disable:Disable a skill'
+        'reload:Reload a skill'
+        'install:Install a skill'
+        'search:Search skills'
+        'stats:Show skill statistics'
+    )
+
+    wiki_cmds=(
+        'init:Initialize wiki'
+        'create:Create a wiki page'
+        'list:List all wiki pages'
+        'search:Search wiki pages'
+        'show:Show page information'
+        'delete:Delete a wiki page'
+        'index:Rebuild wiki index'
+        'stats:Show wiki statistics'
+        'backlinks:Show page backlinks'
+    )
+
+    workflow_cmds=(
+        'list:List all workflows'
+        'show:Show workflow details'
+        'run:Execute a workflow'
+        'create:Create a new workflow'
+        'delete:Delete a workflow'
+    )
+
+    providers=(ollama lmstudio vllm openai anthropic google)
+    approval_modes=(always ask never)
+
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments -C \
+        '1: :->command' \
+        '*::arg:->args' \
+        && return 0
+
+    case $state in
+        command)
+            _describe -t commands 'e-cli commands' commands
+            ;;
+        args)
+            case $line[1] in
+                doctor)
+                    _arguments \
+                        '--fix[Run automatic fixes]' \
+                        '--all[Run all diagnostics]' \
+                        '--interactive[Force interactive mode]' \
+                        '--batch[Force batch mode]' \
+                        '--api[Check API connectivity]' \
+                        '--tools[Check tool availability]' \
+                        '--memory[Check memory system]' \
+                        '--config[Check configuration]' \
+                        '--help[Show help]'
+                    ;;
+                models)
+                    case $line[2] in
+                        list)
+                            _arguments \
+                                '--choose[Choose a model after listing]' \
+                                '--provider[Filter by provider]:provider:($providers)' \
+                                '--help[Show help]'
+                            ;;
+                        *)
+                            _describe -t models_cmds 'models commands' models_cmds
+                            ;;
+                    esac
+                    ;;
+                safe-mode)
+                    _describe -t safe_mode_cmds 'safe-mode commands' safe_mode_cmds
+                    ;;
+                approval)
+                    case $line[2] in
+                        set)
+                            _arguments \
+                                '--mode[Approval mode]:mode:($approval_modes)' \
+                                '-m[Approval mode]:mode:($approval_modes)' \
+                                '--help[Show help]'
+                            ;;
+                        *)
+                            _describe -t approval_cmds 'approval commands' approval_cmds
+                            ;;
+                    esac
+                    ;;
+                sessions)
+                    _describe -t sessions_cmds 'sessions commands' sessions_cmds
+                    _arguments \
+                        '--last[Use last session]' \
+                        '--id[Session ID]:session_id:' \
+                        '--limit[Limit results]:limit:' \
+                        '--help[Show help]'
+                    ;;
+                tools)
+                    case $line[2] in
+                        run)
+                            _arguments \
+                                '--tool[Tool name]:tool:' \
+                                '--command[Shell command]:command:' \
+                                '--url[URL for HTTP tools]:url:' \
+                                '--path[File path]:path:_files' \
+                                '--help[Show help]'
+                            ;;
+                        *)
+                            _describe -t tools_cmds 'tools commands' tools_cmds
+                            ;;
+                    esac
+                    ;;
+                config)
+                    case $line[2] in
+                        set)
+                            _arguments \
+                                '--provider[LLM provider]:provider:($providers)' \
+                                '--model[Model name]:model:' \
+                                '--endpoint[API endpoint]:endpoint:' \
+                                '--temperature[Temperature]:temperature:' \
+                                '--top-p[Top-p value]:top_p:' \
+                                '--max-output-tokens[Max output tokens]:max_tokens:' \
+                                '--safe-mode[Enable safe mode]' \
+                                '--no-safe-mode[Disable safe mode]' \
+                                '--streaming-enabled[Enable streaming]' \
+                                '--no-streaming-enabled[Disable streaming]' \
+                                '--help[Show help]'
+                            ;;
+                        *)
+                            _describe -t config_cmds 'config commands' config_cmds
+                            ;;
+                    esac
+                    ;;
+                skills)
+                    _describe -t skills_cmds 'skills commands' skills_cmds
+                    _arguments \
+                        '--category[Filter by category]:category:' \
+                        '--tag[Filter by tag]:tag:' \
+                        '--disabled[Show disabled skills]' \
+                        '--help[Show help]'
+                    ;;
+                wiki)
+                    _describe -t wiki_cmds 'wiki commands' wiki_cmds
+                    _arguments \
+                        '--category[Wiki category]:category:' \
+                        '--tag[Wiki tag]:tag:' \
+                        '--title[Page title]:title:' \
+                        '--content[Page content]:content:' \
+                        '--help[Show help]'
+                    ;;
+                workflow)
+                    _describe -t workflow_cmds 'workflow commands' workflow_cmds
+                    _arguments \
+                        '--tag[Filter by tag]:tag:' \
+                        '--param[Workflow parameter]:param:' \
+                        '--dry-run[Show execution plan]' \
+                        '--global[Use global workflows]' \
+                        '--force[Skip confirmation]' \
+                        '--verbose[Show detailed output]' \
+                        '--help[Show help]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_e_cli "$@"

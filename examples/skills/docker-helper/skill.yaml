@@ -1,0 +1,35 @@
+name: docker-helper
+version: 1.0.0
+description: Docker container and image management utilities
+author: E-CLI Team
+category: devops
+tags:
+  - docker
+  - containers
+  - devops
+  - deployment
+parameters:
+  - name: operation
+    type: string
+    required: true
+    description: Docker operation to perform
+    choices:
+      - ps
+      - images
+      - inspect
+      - logs
+      - stats
+  - name: container
+    type: string
+    required: false
+    description: Container name or ID for inspect/logs operations
+  - name: lines
+    type: integer
+    required: false
+    default: 50
+    description: Number of log lines to show
+  - name: all
+    type: boolean
+    required: false
+    default: false
+    description: Show all containers/images (including stopped)

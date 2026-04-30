@@ -1,0 +1,36 @@
+name: npm-helper
+version: 1.0.0
+description: NPM and Node.js development helper
+author: E-CLI Team
+category: development
+tags:
+  - npm
+  - nodejs
+  - javascript
+  - development
+parameters:
+  - name: operation
+    type: string
+    required: true
+    description: NPM operation to perform
+    choices:
+      - init
+      - install
+      - uninstall
+      - list
+      - run
+      - version
+      - outdated
+  - name: package
+    type: string
+    required: false
+    description: Package name for install/uninstall
+  - name: script
+    type: string
+    required: false
+    description: Script name to run
+  - name: global
+    type: boolean
+    required: false
+    default: false
+    description: Install globally

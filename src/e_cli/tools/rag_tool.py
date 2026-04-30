@@ -43,7 +43,7 @@ class RagTool:
         corpus: str = "combined",
         top_k: int = 5,
     ) -> RagResult:
-        """Retrieve relevant snippets from memory, workspace, or both."""
+        """Retrieve relevant snippets from memory, workspace, wiki, or combined."""
 
         try:
             query_text = query.strip()
@@ -51,8 +51,8 @@ class RagTool:
                 return RagResult(ok=False, output="RAG search requires a non-empty query.")
 
             normalized_corpus = corpus.strip().lower()
-            if normalized_corpus not in {"session", "workspace", "combined"}:
-                return RagResult(ok=False, output="Invalid corpus. Use session, workspace, or combined.")
+            if normalized_corpus not in {"session", "workspace", "wiki", "combined"}:
+                return RagResult(ok=False, output="Invalid corpus. Use session, workspace, wiki, or combined.")
 
             normalized_top_k = max(1, min(int(top_k), 10))
             deadline = time.monotonic() + max(1, timeout_seconds)
@@ -63,6 +63,9 @@ class RagTool:
 
             if normalized_corpus in {"workspace", "combined"}:
                 candidates.extend(RagTool._search_workspace(query_text, workspace_root, deadline))
+
+            if normalized_corpus in {"wiki", "combined"}:
+                candidates.extend(RagTool._search_wiki(query_text, deadline))
 
             if not candidates:
                 return RagResult(
@@ -233,3 +236,57 @@ class RagTool:
         except Exception:
             return candidates
         return candidates
+
+    @staticmethod
+    def _search_wiki(query: str, deadline: float) -> list[_Candidate]:
+        """Search wiki pages for lexical matches."""
+        candidates: list[_Candidate] = []
+
+        try:
+            # Import wiki module dynamically to avoid circular dependencies
+            from e_cli.config import get_app_dir
+            from e_cli.wiki.manager import WikiManager
+
+            wiki_dir = get_app_dir() / "wiki"
+            if not wiki_dir.exists():
+                return []
+
+            wiki_manager = WikiManager(wiki_dir)
+            pages = wiki_manager.list_pages()
+
+            for page in pages:
+                if time.monotonic() > deadline:
+                    break
+
+                # Score based on title and content
+                title_score = RagTool._score(query=query, text=page.title) * 2.0  # Weight title matches higher
+                content_score = RagTool._score(query=query, text=page.content)
+                tag_score = sum(RagTool._score(query=query, text=tag) for tag in page.tags) * 1.5
+
+                total_score = title_score + content_score + tag_score
+
+                if total_score <= 0:
+                    continue
+
+                # Create snippet from content
+                snippet = RagTool._snippet(query=query, text=page.content, max_chars=200)
+                if not snippet:
+                    snippet = page.content[:200] + "..."
+
+                label = page.title
+                if page.metadata.get("category"):
+                    label = f"{page.metadata['category']}/{page.title}"
+
+                candidates.append(_Candidate(
+                    source="wiki",
+                    label=label,
+                    snippet=snippet,
+                    score=total_score
+                ))
+
+        except Exception:
+            # Silently fail if wiki module not available
+            return candidates
+
+        return candidates
+
