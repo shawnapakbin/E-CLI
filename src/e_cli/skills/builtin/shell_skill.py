@@ -51,7 +51,7 @@ class ShellSkill(PythonSkill):
             return SkillResult(
                 ok=result.ok,
                 output=output,
-                data={"exit_code": result.exitCode},
+                metadata={"exit_code": result.exitCode},
             )
 
         except Exception as e:

@@ -13,6 +13,7 @@ from e_cli.skills.base import Skill, SkillMetadata
 class RegisteredSkill:
     """Represents a registered skill."""
 
+    name: str
     metadata: SkillMetadata
     skill_path: Path
     skill_instance: Skill | None = None
@@ -36,30 +37,59 @@ class SkillRegistry:
 
     def register(
         self,
-        metadata: SkillMetadata,
-        skill_path: Path,
-        skill_instance: Skill | None = None,
-    ) -> None:
+        name: str,
+        skill_instance: Skill | None,
+        manifest_path: Path,
+        category: str = "general",
+    ) -> RegisteredSkill:
         """Register a skill.
 
         Args:
-            metadata: Skill metadata
-            skill_path: Path to skill directory
-            skill_instance: Optional pre-loaded skill instance
+            name: Skill name
+            skill_instance: Skill instance
+            manifest_path: Path to skill directory
+            category: Skill category
         """
-        skill_id = metadata.name
-        self._skills[skill_id] = RegisteredSkill(
-            metadata=metadata,
-            skill_path=skill_path,
-            skill_instance=skill_instance,
+        # Build metadata from skill instance if available, otherwise use defaults
+        version = "1.0.0"
+        description = ""
+        author = "unknown"
+        tags: list[str] = []
+
+        if skill_instance is not None:
+            try:
+                sm = skill_instance.metadata
+                version = sm.version
+                description = sm.description
+                author = sm.author
+                tags = list(sm.tags)
+            except Exception:
+                pass
+
+        meta = SkillMetadata(
+            name=name,
+            version=version,
+            description=description,
+            author=author,
+            category=category,
+            tags=tags,
         )
 
+        registered = RegisteredSkill(
+            name=name,
+            metadata=meta,
+            skill_path=manifest_path,
+            skill_instance=skill_instance,
+        )
+        self._skills[name] = registered
+
         # Update categories index
-        category = metadata.category
         if category not in self._categories:
             self._categories[category] = []
-        if skill_id not in self._categories[category]:
-            self._categories[category].append(skill_id)
+        if name not in self._categories[category]:
+            self._categories[category].append(name)
+
+        return registered
 
     def unregister(self, skill_name: str) -> bool:
         """Unregister a skill.

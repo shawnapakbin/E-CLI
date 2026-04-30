@@ -73,7 +73,7 @@ class SkillLoader:
                 skill_instance = self._load_python_skill(entry_point, skill_path)
 
             # Register the skill
-            self.registry.register(metadata, skill_path, skill_instance)
+            self.registry.register(metadata.name, skill_instance, skill_path, metadata.category)
 
             registered = self.registry.get(metadata.name)
             return registered
@@ -85,7 +85,7 @@ class SkillLoader:
                 version="unknown",
                 description=f"Failed to load: {e}",
             )
-            self.registry.register(metadata, skill_path)
+            self.registry.register(metadata.name, None, skill_path, metadata.category)
             registered = self.registry.get(metadata.name)
             if registered:
                 registered.enabled = False

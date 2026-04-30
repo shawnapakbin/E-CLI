@@ -28,8 +28,8 @@ class SkillResult:
 
     ok: bool
     output: str
-    data: dict[str, Any] = field(default_factory=dict)
-    error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+    error: str = ""
 
 
 @runtime_checkable
@@ -125,7 +125,7 @@ class BaseSkill(ABC):
         Returns:
             SkillResult indicating success
         """
-        return SkillResult(ok=True, output=output, data=data or {})
+        return SkillResult(ok=True, output=output, metadata=data or {})
 
     def _error(self, error: str, output: str = "") -> SkillResult:
         """Create an error result.
