@@ -3,17 +3,30 @@
 E-CLI is a terminal-native LLM agent that runs with local or LAN-served models.
 
 ## Features
-- Local + LAN model support: Ollama, LM Studio, vLLM (OpenAI-compatible)
-- Streaming model responses for supported providers
-- JSON tool-calling loop
+
+### Core Capabilities
+- **Multi-Provider Support**: Local (Ollama, LM Studio, vLLM) + Cloud (OpenAI, Anthropic, Google Gemini)
+- **Interactive Menus**: Dual interface - traditional CLI flags or numbered option menus with auto-detection
+- **Streaming Responses**: Real-time streaming for supported providers
+- **JSON Tool-Calling**: Robust tool execution loop with approval system
+- **Safe Mode**: Safety policy with automatic approval for read-only operations
+- **Persistent Memory**: SQLite-backed session memory with automatic compaction
+- **Session Management**: Complete session history, audit logs, and explicit compaction commands
+
+### Advanced Features
+- **Skills System**: Extensible plugin architecture with hot-reload capability
+- **Knowledge Wiki**: Markdown wiki with wikilinks (`[[target]]`) and backlink tracking
+- **Workflow Engine**: YAML-based workflow/macro system for automating common tasks
+- **Personality Adaptation**: Learns user preferences (verbosity, technical level, interaction style)
+- **RAG Search**: Semantic search over session history and workspace files
+- **Shell Completion**: Tab completion for Bash, Zsh, and Fish shells
+
+### Built-in Tools
 - Shell execution with safe mode defaults
-- File read/write tools with workspace boundary checks
-- Native `git.diff`, `http.get`, `browser`, `ssh`, `curl`, and `rag.search` tools for web inspection, retrieval, and remote execution
-- SQLite-backed persistent memory
-- Token-budgeted conversation recall with automatic summary compaction
-- Explicit `sessions compact` command to condense older session history into reusable summaries
-- Session audit log for approvals and tool executions
-- Configurable inference parameters: temperature, top-p, max output tokens, and provider-specific raw options
+- File read/write with workspace boundary checks
+- `git.diff`, `http.get`, `browser`, `ssh`, `curl` for web inspection and remote execution
+- `rag.search` for semantic retrieval over sessions and workspace
+- Configurable inference parameters: temperature, top-p, max tokens, provider-specific options
 
 ## Install
 If Python may not be installed yet, use the bootstrap installers.
@@ -92,14 +105,81 @@ Next steps:
 4. Run `e-cli`.
 
 ## Quick Start
+
+### First Time Setup
 ```bash
+# Run interactive diagnostics
 e-cli doctor
-e-cli config show
+
+# Configure your LLM provider
 e-cli config set --provider ollama --model llama3
+
+# Or use cloud providers
+e-cli config set --provider openai --model gpt-4o
+e-cli config set --provider anthropic --model claude-3-5-sonnet-20241022
+e-cli config set --provider google --model gemini-2.0-flash-exp
+
+# List and test models
 e-cli models list
-e-cli models list --choose
 e-cli models test
+
+# Start chatting
 e-cli chat
+# or simply
+e-cli
+```
+
+### Skills and Plugins
+```bash
+# List available skills
+e-cli skills list
+
+# Search for specific skills
+e-cli skills search python
+
+# Get skill details
+e-cli skills info shell
+
+# View skill statistics
+e-cli skills stats
+```
+
+### Knowledge Wiki
+```bash
+# Initialize wiki
+e-cli wiki init
+
+# Create a page
+e-cli wiki create "Docker Basics" --category tutorials
+
+# List all pages
+e-cli wiki list
+
+# Search wiki
+e-cli wiki search "networking"
+
+# Show page details and backlinks
+e-cli wiki show "Docker Basics"
+e-cli wiki backlinks "Docker Basics"
+```
+
+### Workflows and Automation
+```bash
+# List available workflows
+e-cli workflow list
+
+# View workflow details
+e-cli workflow show setup-python-project
+
+# Run a workflow
+e-cli workflow run setup-python-project --param project_name=myapp
+
+# Create custom workflow
+e-cli workflow create my-workflow --description "My automation"
+```
+
+### Tools and Commands
+```bash
 e-cli tools list
 e-cli tools run --tool shell --command "echo hello"
 e-cli tools run --tool git.diff --path README.md
@@ -107,14 +187,38 @@ e-cli tools run --tool http.get --url "https://example.com"
 e-cli tools run --tool browser --url "https://example.com"
 e-cli tools run --tool ssh --host example.com --command "uptime"
 e-cli tools run --tool curl --url "https://api.example.com" --method GET
-e-cli tools run --tool curl --url "https://api.example.com" --method POST --header "Authorization=Bearer token" --content '{"ok":true}'
 e-cli tools run --tool rag.search --query "router execute" --corpus workspace --top-k 5
-e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512 --provider-option seed=42
-e-cli config set --rag-corpus-default combined --rag-top-k 5
-e-cli ask "debug why nginx isn't starting"
+```
+
+### Sessions and Memory
+```bash
+# List sessions
+e-cli sessions list
+
+# Show session details
+e-cli sessions show --last
+
+# Compact session memory
 e-cli sessions compact --last --dry-run
 e-cli sessions compact --last
+
+# View audit log
 e-cli sessions audit --last
+```
+
+### Configuration
+```bash
+# View configuration
+e-cli config show
+
+# Tune inference parameters
+e-cli config set --temperature 0.7 --top-p 0.9 --max-output-tokens 512
+
+# Configure RAG defaults
+e-cli config set --rag-corpus-default combined --rag-top-k 5
+
+# Provider-specific options
+e-cli config set --provider-option seed=42
 ```
 
 ## Configuration Guide
@@ -153,7 +257,7 @@ Common mistakes and fixes:
 	- Use: `e-cli config set --no-safe-mode`
 
 ### Core Runtime Settings
-- `provider`: Model backend (`ollama`, `lmstudio`, `vllm`)
+- `provider`: Model backend (`ollama`, `lmstudio`, `vllm`, `openai`, `anthropic`, `google`)
 - `model`: Active model name/id
 - `endpoint`: Provider base URL
 - `maxTurns`: Maximum reasoning/tool turns per prompt
@@ -265,3 +369,229 @@ If model replies are too random, lower `temperature`. If responses are cut short
 - `rag.search` is read-only retrieval and auto-allowed in safe mode
 
 Use `e-cli tools list` to inspect the active safety policy for all tools.
+
+## Advanced Features
+
+### Interactive Menus
+
+E-CLI supports both traditional CLI flags and interactive numbered option menus. The system automatically detects TTY and switches modes accordingly.
+
+```bash
+# Interactive mode (shows numbered menu)
+e-cli doctor
+
+# Force batch mode
+e-cli doctor --batch
+
+# Menu options
+e-cli config set --interactive-menus    # Enable menus
+e-cli config set --no-interactive-menus # Disable menus
+e-cli config set --menu-style rich      # rich, standard, minimal
+```
+
+When in interactive mode, you'll see numbered options like:
+```
+1. Run basic diagnostics
+2. Run autofix
+3. Test model connections
+...
+```
+
+### Skills and Plugin System
+
+Create extensible skills to add new capabilities to E-CLI.
+
+**Skill Structure:**
+```
+~/.e-cli/skills/
+├── my-skill/
+│   ├── skill.yaml          # Metadata manifest
+│   ├── skill.py            # Implementation
+│   └── README.md
+```
+
+**skill.yaml Example:**
+```yaml
+name: my-skill
+version: 1.0.0
+description: My custom skill
+author: me
+category: automation
+tags:
+  - custom
+  - automation
+parameters:
+  - name: input
+    type: string
+    required: true
+```
+
+**Commands:**
+```bash
+e-cli skills list                    # List all skills
+e-cli skills info my-skill           # Show details
+e-cli skills enable my-skill         # Enable skill
+e-cli skills disable my-skill        # Disable skill
+e-cli skills reload my-skill         # Hot-reload after changes
+e-cli skills install ./my-skill      # Install from directory
+e-cli skills search automation       # Search by query/tags
+```
+
+### Knowledge Wiki
+
+Build an interconnected knowledge base using markdown with wikilinks.
+
+**Features:**
+- Markdown pages with YAML frontmatter
+- Wikilinks: `[[Page Name]]` or `[[Page Name|Display Text]]`
+- Automatic backlink tracking
+- Categories and tags
+- Full-text search with relevance scoring
+- Fast JSON-based indexing
+
+**Example Page:**
+```markdown
+---
+title: Docker Networking
+tags: [docker, networking, containers]
+category: tutorials
+---
+
+# Docker Networking
+
+Docker uses [[Container Networking]] to connect containers.
+
+Key concepts:
+- [[Bridge Networks]]
+- [[Host Networks]]
+- [[Overlay Networks]]
+
+See also: [[Docker Compose]], [[Kubernetes]]
+```
+
+**Commands:**
+```bash
+e-cli wiki init                           # Initialize wiki
+e-cli wiki create "Page Title"            # Create page
+e-cli wiki list --category tutorials      # List by category
+e-cli wiki search "docker"                # Search pages
+e-cli wiki show "Docker Networking"       # Show page info
+e-cli wiki backlinks "Container Networking" # Show backlinks
+e-cli wiki index                          # Rebuild search index
+e-cli wiki stats                          # Show statistics
+```
+
+### Workflow Automation
+
+Define reusable workflows for common tasks using YAML.
+
+**Workflow Structure:**
+```yaml
+name: setup-python-project
+version: 1.0.0
+description: Initialize a new Python project
+tags: [python, setup]
+
+parameters:
+  - name: project_name
+    type: string
+    required: true
+  - name: include_tests
+    type: boolean
+    default: true
+
+steps:
+  - name: Create directory structure
+    tool: shell
+    parameters:
+      command: mkdir -p ${project_name}/{src,tests,docs}
+
+  - name: Initialize git
+    tool: shell
+    parameters:
+      command: cd ${project_name} && git init
+
+  - name: Create pyproject.toml
+    tool: file.write
+    parameters:
+      path: ${project_name}/pyproject.toml
+      content: |
+        [project]
+        name = "${project_name}"
+        version = "0.1.0"
+```
+
+**Commands:**
+```bash
+e-cli workflow list                    # List workflows
+e-cli workflow show my-workflow        # Show details
+e-cli workflow run my-workflow --param key=value
+e-cli workflow run my-workflow --dry-run  # Preview execution
+e-cli workflow create my-workflow      # Create template
+e-cli workflow delete my-workflow      # Delete workflow
+```
+
+**Workflow Locations:**
+- Global: `~/.e-cli/workflows/`
+- Project: `./workflows/`
+
+### Personality Adaptation
+
+E-CLI learns your preferences over time and adapts its behavior.
+
+**Tracked Traits:**
+- **Verbosity**: Detailed explanations vs. concise answers
+- **Technical Level**: Beginner-friendly vs. expert terminology
+- **Interaction Style**: Formal vs. casual communication
+- **Patience Level**: Step-by-step vs. quick solutions
+- **Learning Mode**: Teaching vs. doing
+
+The system stores preferences in SQLite and generates adaptive prompts based on your interaction history.
+
+### Shell Completion
+
+Install tab completion for your shell:
+
+**Bash:**
+```bash
+# User installation
+mkdir -p ~/.local/share/bash-completion/completions
+cp scripts/completions/e-cli-completion.bash ~/.local/share/bash-completion/completions/e-cli
+echo 'source ~/.local/share/bash-completion/completions/e-cli' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Zsh:**
+```bash
+# User installation
+mkdir -p ~/.zsh/completions
+cp scripts/completions/_e-cli ~/.zsh/completions/
+echo 'fpath=(~/.zsh/completions $fpath)' >> ~/.zshrc
+echo 'autoload -Uz compinit && compinit' >> ~/.zshrc
+exec zsh
+```
+
+**Fish:**
+```bash
+mkdir -p ~/.config/fish/completions
+cp scripts/completions/e-cli.fish ~/.config/fish/completions/
+# Fish loads automatically
+```
+
+See `docs/SHELL_COMPLETION.md` for detailed installation instructions.
+
+## Documentation
+
+- **[QUICKSTART.md](QUICKSTART.md)**: Quick start guide for new users
+- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)**: Technical implementation details
+- **[docs/SHELL_COMPLETION.md](docs/SHELL_COMPLETION.md)**: Shell completion installation guide
+
+## Example Workflows
+
+E-CLI includes example workflows to get you started:
+
+- `setup-python-project.yaml`: Initialize Python projects with best practices
+- `analyze-codebase.yaml`: Analyze codebase and generate reports
+
+Create your own workflows in `~/.e-cli/workflows/` or `./workflows/` in your project.
+

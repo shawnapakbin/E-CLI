@@ -44,6 +44,12 @@ try:
 except ImportError:
     wikiApp = None
 
+try:
+    from e_cli.commands.workflow_commands import app as workflowApp
+    app.add_typer(workflowApp, name="workflow")
+except ImportError:
+    workflowApp = None
+
 app.add_typer(modelsApp, name="models")
 app.add_typer(safeModeApp, name="safe-mode")
 app.add_typer(approvalApp, name="approval")
