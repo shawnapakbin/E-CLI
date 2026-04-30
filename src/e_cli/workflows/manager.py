@@ -143,9 +143,45 @@ class WorkflowManager:
 class WorkflowExecutor:
     """Executes workflows."""
 
-    def __init__(self) -> None:
-        """Initialize workflow executor."""
-        pass
+    def __init__(
+        self,
+        tool_router: Any | None = None,
+        skill_manager: Any | None = None,
+        timeout_seconds: int = 120,
+    ) -> None:
+        """Initialize workflow executor.
+
+        Args:
+            tool_router: Optional ToolRouter instance for tool execution
+            skill_manager: Optional SkillManager instance for skill execution
+            timeout_seconds: Default timeout for tool/skill execution
+        """
+        self.tool_router = tool_router
+        self.skill_manager = skill_manager
+        self.timeout_seconds = timeout_seconds
+
+    def _substitute_parameters(self, text: str, params: dict[str, Any]) -> str:
+        """Substitute parameter placeholders in text.
+
+        Supports both ${param} and {param} syntax.
+
+        Args:
+            text: Text with parameter placeholders
+            params: Parameter values
+
+        Returns:
+            Text with substituted values
+        """
+        import re
+
+        result = text
+
+        # Substitute ${param} style
+        for key, value in params.items():
+            result = result.replace(f"${{{key}}}", str(value))
+            result = result.replace(f"{{{key}}}", str(value))
+
+        return result
 
     def execute(
         self,
@@ -172,9 +208,12 @@ class WorkflowExecutor:
         for step in workflow.steps:
             # Evaluate condition if present
             if step.condition:
+                # Substitute parameters in condition
+                condition = self._substitute_parameters(step.condition, params)
+
                 # Simple condition evaluation (can be enhanced)
                 try:
-                    if not eval(step.condition, {}, params):
+                    if not eval(condition, {}, params):
                         results["steps"].append({
                             "name": step.name,
                             "skipped": True,
@@ -189,17 +228,69 @@ class WorkflowExecutor:
                     results["success"] = False
                     break
 
-            # Execute step (placeholder - would integrate with tools/skills)
+            # Execute step
             step_result = {
                 "name": step.name,
                 "tool": step.tool,
                 "status": "pending",
             }
 
-            # Here would be actual tool execution
-            # For now, mark as executed
-            step_result["status"] = "executed"
+            try:
+                # Substitute parameters in step parameters
+                step_params = {}
+                for key, value in step.parameters.items():
+                    if isinstance(value, str):
+                        step_params[key] = self._substitute_parameters(value, params)
+                    else:
+                        step_params[key] = value
+
+                # Execute based on tool type
+                if self.tool_router and step.tool in [
+                    "shell", "git.diff", "http.get", "browser", "ssh", "curl",
+                    "rag.search", "file.read", "file.write", "file.list"
+                ]:
+                    # Execute via ToolRouter
+                    from e_cli.agent.protocol import ToolCall
+
+                    # Build ToolCall from step parameters
+                    tool_call = ToolCall(tool=step.tool, **step_params)
+                    tool_result = self.tool_router.execute(tool_call, self.timeout_seconds)
+
+                    if tool_result.ok:
+                        step_result["status"] = "completed"
+                        step_result["output"] = tool_result.output[:500]  # Truncate for display
+                    else:
+                        step_result["status"] = "failed"
+                        step_result["error"] = tool_result.output
+                        results["success"] = False
+
+                elif self.skill_manager and step.tool.startswith("skill:"):
+                    # Execute via SkillManager
+                    skill_name = step.tool.replace("skill:", "")
+                    skill_result = self.skill_manager.execute_skill(skill_name, **step_params)
+
+                    if skill_result.ok:
+                        step_result["status"] = "completed"
+                        step_result["output"] = skill_result.output[:500]  # Truncate
+                    else:
+                        step_result["status"] = "failed"
+                        step_result["error"] = skill_result.error
+                        results["success"] = False
+
+                else:
+                    # Unknown tool or no router available - simulate execution
+                    step_result["status"] = "simulated"
+                    step_result["note"] = "Tool router not available, execution simulated"
+
+            except Exception as e:
+                step_result["status"] = "error"
+                step_result["error"] = str(e)
+                results["success"] = False
 
             results["steps"].append(step_result)
+
+            # Stop on first failure unless configured otherwise
+            if not results["success"]:
+                break
 
         return results
