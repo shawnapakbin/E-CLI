@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import cast
 
 from e_cli.agent.protocol import ParsedAgentOutput, parse_tool_call
 from e_cli.config import ApprovalMode
@@ -66,9 +65,8 @@ class AgentLoop:
             )
 
         try:
-            streamingClient = cast(ModelClient, self.modelClient)
             chunks = list(
-                streamingClient.stream_chat(
+                self.modelClient.stream_chat(
                     model_name=self.modelName,
                     messages=conversationHistory,
                     timeout_seconds=self.timeoutSeconds,

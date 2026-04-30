@@ -39,8 +39,8 @@ class WikiEmbeddings:
             model_name: Name of the sentence transformer model to use
         """
         self.model_name = model_name
-        self._model = None
-        self._index = None
+        self._model: Any = None
+        self._index: Any = None
 
     def _ensure_model_loaded(self) -> None:
         """Lazy load the embedding model."""

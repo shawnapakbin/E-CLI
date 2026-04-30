@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from e_cli.config import get_app_dir
 
@@ -197,7 +197,7 @@ class WorkflowExecutor:
             Execution results
         """
         params = parameters or {}
-        results = {
+        results: dict[str, Any] = {
             "workflow": workflow.name,
             "steps": [],
             "success": True,
@@ -249,10 +249,10 @@ class WorkflowExecutor:
                     "rag.search", "file.read", "file.write", "file.list"
                 ]:
                     # Execute via ToolRouter
-                    from e_cli.agent.protocol import ToolCall
+                    from e_cli.agent.protocol import ToolCall, ToolName
 
                     # Build ToolCall from step parameters
-                    tool_call = ToolCall(tool=step.tool, **step_params)
+                    tool_call = ToolCall(tool=cast(ToolName, step.tool), **step_params)  # type: ignore[arg-type]
                     tool_result = self.tool_router.execute(tool_call, self.timeout_seconds)
 
                     if tool_result.ok:

@@ -6,16 +6,17 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 import sys
+from typing import cast
 import uuid
 
 import typer
 
 from e_cli.agent.loop import AgentLoop
-from e_cli.agent.protocol import ToolCall
+from e_cli.agent.protocol import ToolCall, ToolName
 from e_cli.config import ApprovalMode, AppConfig, ProviderType, RagCorpus, get_app_dir, load_config, save_config
 from e_cli.memory.service import MemoryService
 from e_cli.memory.store import MemoryStore
-from e_cli.models.base import ModelMessage
+from e_cli.models.base import ModelClient, ModelMessage
 from e_cli.models.discovery import DiscoveredEndpoint, ModelDiscovery
 from e_cli.models.factory import create_model_client
 from e_cli.safety.approval import requestApprovalWithMode
@@ -36,19 +37,19 @@ try:
     from e_cli.commands.skills_commands import app as skillsApp
     app.add_typer(skillsApp, name="skills")
 except ImportError:
-    skillsApp = None
+    pass
 
 try:
     from e_cli.commands.wiki_commands import app as wikiApp
     app.add_typer(wikiApp, name="wiki")
 except ImportError:
-    wikiApp = None
+    pass
 
 try:
     from e_cli.commands.workflow_commands import app as workflowApp
     app.add_typer(workflowApp, name="workflow")
 except ImportError:
-    workflowApp = None
+    pass
 
 app.add_typer(modelsApp, name="models")
 app.add_typer(safeModeApp, name="safe-mode")
@@ -138,7 +139,7 @@ def _buildMemoryService(config: AppConfig) -> MemoryService:
         raise RuntimeError(f"Failed to create memory service: {exc}") from exc
 
 
-def _createConfiguredModelClient(config: AppConfig, provider: ProviderType, endpoint: str):
+def _createConfiguredModelClient(config: AppConfig, provider: ProviderType, endpoint: str) -> ModelClient:
     """Create a model client using persisted inference parameters."""
 
     return create_model_client(
@@ -844,7 +845,7 @@ def runTool(
             parsedHeaders[keyText] = value.strip()
 
         toolCall = ToolCall(
-            tool=normalizedTool,
+            tool=cast(ToolName, normalizedTool),
             command=command or None,
             path=path or None,
             url=url or None,
