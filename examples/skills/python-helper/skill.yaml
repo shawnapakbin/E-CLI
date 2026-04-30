@@ -1,0 +1,33 @@
+name: python-helper
+version: 1.0.0
+description: Python development helper utilities
+author: E-CLI Team
+category: development
+tags:
+  - python
+  - development
+  - programming
+  - pip
+parameters:
+  - name: operation
+    type: string
+    required: true
+    description: Python operation to perform
+    choices:
+      - version
+      - packages
+      - install
+      - venv
+      - run
+  - name: package
+    type: string
+    required: false
+    description: Package name for install operation
+  - name: script
+    type: string
+    required: false
+    description: Python script to run
+  - name: venv_path
+    type: string
+    required: false
+    description: Virtual environment path

@@ -1,0 +1,68 @@
+name: code-review-prep
+version: 1.0.0
+description: Prepare code for review with formatting, linting, and testing
+author: E-CLI Team
+tags:
+  - code-review
+  - quality
+  - testing
+  - git
+
+parameters:
+  - name: run_linter
+    type: boolean
+    default: true
+    description: Run code linter
+  - name: run_formatter
+    type: boolean
+    default: true
+    description: Run code formatter
+  - name: run_tests
+    type: boolean
+    default: true
+    description: Run test suite
+
+steps:
+  - name: Check current git status
+    tool: skill:git-helper
+    parameters:
+      operation: status
+
+  - name: Show recent commits
+    tool: skill:git-helper
+    parameters:
+      operation: log
+      limit: 5
+
+  - name: Format Python code
+    tool: shell
+    parameters:
+      command: black .
+    condition: run_formatter == True
+
+  - name: Lint Python code
+    tool: shell
+    parameters:
+      command: ruff check .
+    condition: run_linter == True
+
+  - name: Run Python tests
+    tool: shell
+    parameters:
+      command: pytest tests/
+    condition: run_tests == True
+
+  - name: Check for uncommitted changes
+    tool: skill:git-helper
+    parameters:
+      operation: status
+
+  - name: Show diff summary
+    tool: skill:git-helper
+    parameters:
+      operation: diff
+
+  - name: Generate summary
+    tool: shell
+    parameters:
+      command: echo "Code review preparation complete. Review changes and commit."

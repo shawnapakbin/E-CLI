@@ -1,0 +1,23 @@
+name: system-info
+version: 1.0.0
+description: System information and monitoring utilities
+author: E-CLI Team
+category: system
+tags:
+  - system
+  - monitoring
+  - diagnostics
+  - info
+parameters:
+  - name: info_type
+    type: string
+    required: true
+    description: Type of system information to retrieve
+    choices:
+      - os
+      - cpu
+      - memory
+      - disk
+      - network
+      - processes
+      - uptime

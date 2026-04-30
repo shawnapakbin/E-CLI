@@ -1,0 +1,73 @@
+name: system-diagnostics
+version: 1.0.0
+description: Comprehensive system diagnostics and health check
+author: E-CLI Team
+tags:
+  - system
+  - diagnostics
+  - monitoring
+  - health-check
+
+parameters:
+  - name: detailed
+    type: boolean
+    default: false
+    description: Show detailed diagnostics
+
+steps:
+  - name: Check system info
+    tool: skill:system-info
+    parameters:
+      info_type: os
+
+  - name: Check CPU
+    tool: skill:system-info
+    parameters:
+      info_type: cpu
+
+  - name: Check memory
+    tool: skill:system-info
+    parameters:
+      info_type: memory
+
+  - name: Check disk space
+    tool: skill:system-info
+    parameters:
+      info_type: disk
+
+  - name: Check system uptime
+    tool: skill:system-info
+    parameters:
+      info_type: uptime
+
+  - name: Check running processes
+    tool: skill:system-info
+    parameters:
+      info_type: processes
+    condition: detailed == True
+
+  - name: Check network interfaces
+    tool: skill:system-info
+    parameters:
+      info_type: network
+    condition: detailed == True
+
+  - name: Check Python version
+    tool: skill:python-helper
+    parameters:
+      operation: version
+
+  - name: Check Node.js/NPM version
+    tool: skill:npm-helper
+    parameters:
+      operation: version
+
+  - name: Check Docker status
+    tool: skill:docker-helper
+    parameters:
+      operation: ps
+
+  - name: Check git configuration
+    tool: skill:git-helper
+    parameters:
+      operation: status
