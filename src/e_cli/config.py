@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-ProviderType = Literal["ollama", "lmstudio", "vllm"]
+ProviderType = Literal["ollama", "lmstudio", "vllm", "openai", "anthropic", "google"]
 ApprovalMode = Literal["interactive", "auto-approve", "deny"]
 RagCorpus = Literal["session", "workspace", "combined"]
 MenuStyle = Literal["minimal", "standard", "rich"]
