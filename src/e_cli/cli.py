@@ -351,11 +351,29 @@ def chat(
 
 
 @app.command("doctor")
-def doctor() -> None:
+def doctor(
+    interactive: bool = typer.Option(None, "--interactive", "-i", help="Force interactive menu mode"),
+    batch: bool = typer.Option(False, "--batch", "-b", help="Force batch/CLI mode"),
+) -> None:
     """Run local diagnostics for config, model connectivity, safety, and memory."""
 
     try:
         config = load_config()
+
+        # Determine if we should use menu mode
+        use_menu = interactive if interactive is not None else (config.interactiveMenus and not batch)
+
+        # If interactive mode and in TTY, show menu
+        if use_menu and sys.stdin.isatty() and sys.stdout.isatty():
+            from e_cli.menus.doctor_menu import create_doctor_menu
+            from e_cli.ui.menu import MenuSession
+
+            menu = create_doctor_menu()
+            session = MenuSession(root_menu=menu)
+            session.run()
+            return
+
+        # Otherwise, run traditional diagnostic checks
         checks: list[tuple[str, bool, str]] = []
 
         modelConfigured = bool(config.model.strip())
