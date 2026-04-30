@@ -28,7 +28,8 @@ dev = [
   "pytest-cov>=5.0.0",
   "mypy>=1.11.1",
   "ruff>=0.6.3",
-  "types-requests>=2.32.0"
+  "types-requests>=2.32.0",
+  "types-PyYAML>=6.0.0"
 ]
 
 [tool.pytest.ini_options]
@@ -45,6 +46,10 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["sentence_transformers.*", "numpy.*"]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["src/e_cli"]
