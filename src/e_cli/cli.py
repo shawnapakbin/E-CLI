@@ -30,6 +30,20 @@ approvalApp = typer.Typer(help="Approval mode controls")
 sessionsApp = typer.Typer(help="Session memory commands")
 toolsApp = typer.Typer(help="Tool inspection and execution commands")
 configApp = typer.Typer(help="Configuration inspection and updates")
+
+# Import new command modules
+try:
+    from e_cli.commands.skills_commands import app as skillsApp
+    app.add_typer(skillsApp, name="skills")
+except ImportError:
+    skillsApp = None
+
+try:
+    from e_cli.commands.wiki_commands import app as wikiApp
+    app.add_typer(wikiApp, name="wiki")
+except ImportError:
+    wikiApp = None
+
 app.add_typer(modelsApp, name="models")
 app.add_typer(safeModeApp, name="safe-mode")
 app.add_typer(approvalApp, name="approval")
