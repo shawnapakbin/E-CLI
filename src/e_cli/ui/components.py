@@ -85,7 +85,7 @@ def prompt_choice(question: str, choices: list[str], default: str | None = None)
     Returns:
         User's selected choice
     """
-    return Prompt.ask(question, choices=choices, default=default or "")
+    return Prompt.ask(question, choices=choices, default=default if default is not None else "")
 
 
 def show_progress_spinner(description: str, task: Callable[[], Any]) -> Any:
