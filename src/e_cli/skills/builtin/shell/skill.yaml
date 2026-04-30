@@ -1,0 +1,22 @@
+name: shell
+version: 1.0.0
+description: Execute shell commands with configurable safety checks
+author: e-cli-core
+category: core
+tags:
+  - shell
+  - command
+  - execution
+permissions:
+  - shell.execute
+entry_point: shell_skill.py
+parameters:
+  - name: command
+    type: string
+    required: true
+    description: Shell command to execute
+  - name: timeout_seconds
+    type: integer
+    required: false
+    default: 60
+    description: Timeout in seconds
