@@ -19,6 +19,11 @@ class RegisteredSkill:
     enabled: bool = True
     load_error: str | None = None
 
+    @property
+    def name(self) -> str:
+        """Get skill name from metadata."""
+        return self.metadata.name
+
 
 class SkillRegistry:
     """Registry for managing available skills."""
@@ -36,30 +41,65 @@ class SkillRegistry:
 
     def register(
         self,
-        metadata: SkillMetadata,
-        skill_path: Path,
+        name: str | SkillMetadata | None = None,
         skill_instance: Skill | None = None,
-    ) -> None:
+        manifest_path: Path | None = None,
+        category: str | None = None,
+        # Legacy parameters for backward compatibility
+        metadata: SkillMetadata | None = None,
+        skill_path: Path | None = None,
+    ) -> RegisteredSkill:
         """Register a skill.
 
         Args:
-            metadata: Skill metadata
-            skill_path: Path to skill directory
+            name: Skill name or metadata object
             skill_instance: Optional pre-loaded skill instance
+            manifest_path: Path to skill directory
+            category: Skill category
+            metadata: (Legacy) Skill metadata
+            skill_path: (Legacy) Path to skill directory
+
+        Returns:
+            RegisteredSkill instance
         """
+        # Handle legacy API: register(metadata, skill_path, skill_instance)
+        if isinstance(name, SkillMetadata):
+            metadata = name
+            skill_path = skill_instance if isinstance(skill_instance, Path) else manifest_path
+            skill_instance = manifest_path if not isinstance(manifest_path, Path) else skill_instance
+        # Handle new API: register(name, skill_instance, manifest_path, category)
+        elif isinstance(name, str):
+            if metadata is None:
+                # Create metadata from parameters
+                metadata = SkillMetadata(
+                    name=name,
+                    version="1.0.0",
+                    description=f"Skill {name}",
+                    category=category or "general",
+                )
+            skill_path = manifest_path
+        elif metadata is not None:
+            # Pure legacy call
+            pass
+        else:
+            raise ValueError("Must provide either name or metadata")
+
         skill_id = metadata.name
-        self._skills[skill_id] = RegisteredSkill(
+        registered = RegisteredSkill(
             metadata=metadata,
-            skill_path=skill_path,
+            skill_path=skill_path or Path("."),
             skill_instance=skill_instance,
         )
+        self._skills[skill_id] = registered
 
         # Update categories index
-        category = metadata.category
-        if category not in self._categories:
-            self._categories[category] = []
-        if skill_id not in self._categories[category]:
-            self._categories[category].append(skill_id)
+        cat = metadata.category
+        if cat not in self._categories:
+            self._categories[cat] = []
+        if skill_id not in self._categories[cat]:
+            self._categories[cat].append(skill_id)
+
+        return registered
 
     def unregister(self, skill_name: str) -> bool:
         """Unregister a skill.

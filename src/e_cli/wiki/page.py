@@ -33,6 +33,36 @@ class WikiPage:
     updated_at: datetime | None = None
 
     @staticmethod
+    def _parse_wikilinks(content: str) -> list[WikiLink]:
+        """Parse wikilinks from content.
+
+        Args:
+            content: Page content
+
+        Returns:
+            List of WikiLink objects
+        """
+        links = []
+        link_pattern = r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"
+        for match in re.finditer(link_pattern, content):
+            target = match.group(1).strip()
+            display = match.group(2).strip() if match.group(2) else None
+            links.append(WikiLink(target=target, display=display))
+        return links
+
+    @staticmethod
+    def _parse_inline_tags(content: str) -> list[str]:
+        """Parse inline tags from content.
+
+        Args:
+            content: Page content
+
+        Returns:
+            List of tag strings
+        """
+        return re.findall(r"#([\w-]+)", content)
+
+    @staticmethod
     def from_file(file_path: Path) -> WikiPage:
         """Load a wiki page from a markdown file.
 
@@ -68,26 +98,27 @@ class WikiPage:
                 except Exception:
                     pass
 
-        # Extract title from metadata or first h1
+        # Extract title from metadata or filename or first h1
         title = metadata.get("title", "")
         if not title:
-            # Try to find first h1
-            match = re.search(r"^#\s+(.+)$", body_content, re.MULTILINE)
-            if match:
-                title = match.group(1).strip()
+            # When no frontmatter title, prefer filename over H1
+            # This ensures consistent naming based on file structure
+            if metadata:
+                # Has frontmatter but no title field - try H1
+                match = re.search(r"^#\s+(.+)$", body_content, re.MULTILINE)
+                if match:
+                    title = match.group(1).strip()
+                else:
+                    title = file_path.stem
             else:
+                # No frontmatter at all - use filename
                 title = file_path.stem
 
-        # Parse wikilinks [[target]] or [[target|display]]
-        links = []
-        link_pattern = r"\[\[([^\]|]+)(?:\|([^\]]+))?\]\]"
-        for match in re.finditer(link_pattern, body_content):
-            target = match.group(1).strip()
-            display = match.group(2).strip() if match.group(2) else None
-            links.append(WikiLink(target=target, display=display))
+        # Parse wikilinks using helper method
+        links = WikiPage._parse_wikilinks(body_content)
 
-        # Extract inline tags #tag
-        inline_tags = re.findall(r"#([\w-]+)", body_content)
+        # Extract inline tags using helper method
+        inline_tags = WikiPage._parse_inline_tags(body_content)
         all_tags = list(set(tags + inline_tags))
 
         # Get file timestamps
@@ -153,3 +184,19 @@ class WikiPage:
             List of page names
         """
         return [link.target for link in self.links]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert page to dictionary representation.
+
+        Returns:
+            Dictionary containing page data
+        """
+        return {
+            "title": self.title,
+            "content": self.content,
+            "metadata": self.metadata,
+            "tags": self.tags,
+            "links": [{"target": link.target, "display": link.display} for link in self.links],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }

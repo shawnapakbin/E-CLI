@@ -29,7 +29,8 @@ class SkillResult:
     ok: bool
     output: str
     data: dict[str, Any] = field(default_factory=dict)
-    error: str | None = None
+    error: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
