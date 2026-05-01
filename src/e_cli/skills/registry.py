@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, overload
 
 from e_cli.skills.base import Skill, SkillMetadata
 
@@ -39,11 +39,28 @@ class SkillRegistry:
         self._skills: dict[str, RegisteredSkill] = {}
         self._categories: dict[str, list[str]] = {}
 
+    @overload
+    def register(
+        self,
+        name: str,
+        skill_instance: Skill | None = None,
+        manifest_path: Path | None = None,
+        category: str | None = None,
+    ) -> RegisteredSkill: ...
+
+    @overload
+    def register(
+        self,
+        name: SkillMetadata,
+        skill_instance: Path,
+        manifest_path: Skill | None = None,
+    ) -> RegisteredSkill: ...
+
     def register(
         self,
         name: str | SkillMetadata | None = None,
-        skill_instance: Skill | None = None,
-        manifest_path: Path | None = None,
+        skill_instance: Skill | Path | None = None,
+        manifest_path: Path | Skill | None = None,
         category: str | None = None,
         # Legacy parameters for backward compatibility
         metadata: SkillMetadata | None = None,
@@ -63,37 +80,46 @@ class SkillRegistry:
             RegisteredSkill instance
         """
         # Handle legacy API: register(metadata, skill_path, skill_instance)
+        final_metadata: SkillMetadata
+        final_skill_path: Path
+        final_skill_instance: Skill | None = None
+
         if isinstance(name, SkillMetadata):
-            metadata = name
-            skill_path = skill_instance if isinstance(skill_instance, Path) else manifest_path
-            skill_instance = manifest_path if not isinstance(manifest_path, Path) else skill_instance
+            final_metadata = name
+            final_skill_path = skill_instance if isinstance(skill_instance, Path) else (manifest_path if isinstance(manifest_path, Path) else Path("."))
+            final_skill_instance = manifest_path if isinstance(manifest_path, Skill) else (skill_instance if isinstance(skill_instance, Skill) else None)
         # Handle new API: register(name, skill_instance, manifest_path, category)
         elif isinstance(name, str):
             if metadata is None:
                 # Create metadata from parameters
-                metadata = SkillMetadata(
+                final_metadata = SkillMetadata(
                     name=name,
                     version="1.0.0",
                     description=f"Skill {name}",
                     category=category or "general",
                 )
-            skill_path = manifest_path
+            else:
+                final_metadata = metadata
+            final_skill_path = manifest_path if isinstance(manifest_path, Path) else (skill_path or Path("."))
+            final_skill_instance = skill_instance if isinstance(skill_instance, Skill) else None
         elif metadata is not None:
             # Pure legacy call
-            pass
+            final_metadata = metadata
+            final_skill_path = skill_path or Path(".")
+            final_skill_instance = skill_instance if isinstance(skill_instance, Skill) else None
         else:
             raise ValueError("Must provide either name or metadata")
 
-        skill_id = metadata.name
+        skill_id = final_metadata.name
         registered = RegisteredSkill(
-            metadata=metadata,
-            skill_path=skill_path or Path("."),
-            skill_instance=skill_instance,
+            metadata=final_metadata,
+            skill_path=final_skill_path,
+            skill_instance=final_skill_instance,
         )
         self._skills[skill_id] = registered
 
         # Update categories index
-        cat = metadata.category
+        cat = final_metadata.category
         if cat not in self._categories:
             self._categories[cat] = []
         if skill_id not in self._categories[cat]:
